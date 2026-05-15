@@ -183,35 +183,47 @@ if check_password():
             st.write("The log is currently empty.")
 
     # --- RESTORED DESCRIPTIVE RECOVERY PROTOCOLS ---
-    with tab3:
-        st.subheader("Recommended Post-Workout Recovery Guide")
-        st.markdown("Maximize recovery, prevent stiffness, and protect your joints to stay consistent week-over-week:")
-        st.write("---")
+with tab3:
+    st.subheader("Home Gym Reference Library")
+    st.info("Technical cues for your lifts and recovery stretches.")
+
+    # --- EXERCISE SECTION ---
+    st.markdown("## 🏋️ Workout Exercises")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### **Lower Body**")
+        st.write("**Smith Machine Squats:** Set the bar at shoulder height. Keep feet shoulder-width apart. Focus on sitting 'back' into your hips and keeping your chest up.")
+        st.write("**Smith Machine RDLs:** Hinge at the hips with a slight knee bend. Lower the bar to mid-shin, feeling the stretch in your hamstrings, then squeeze glutes to stand.")
         
-        st.markdown("### **1. Frame Lat Stretch**")
-        st.write("""
-        * **Target:** Latissimus Dorsi, Upper Back, Thoracic Spine.
-        * **How to do it:** Face your gym rack's vertical steel frame. Grab an upright pillar firmly with both hands at roughly chest height. Step back, hinge deeply at your hips, and drop your head between your shoulders while pushing your hips away from the rack. 
-        * **Duration:** Hold for 30 seconds while focusing on deep belly breathing to decompress the upper back.
-        """)
-        
-        st.markdown("### **2. Doorway Chest Fly Stretch**")
-        st.write("""
-        * **Target:** Pectorals (Chest), Anterior Deltoids (Front Shoulders).
-        * **How to do it:** Stand in the center of your rack frame or a doorway. Place your forearms or hands flat against the vertical pillars with your elbows bent at 90 degrees. Gently step one foot forward, shifting your body weight frontward until you feel a deep, comfortable stretch open up across your chest.
-        * **Duration:** Hold for 30 seconds. Do not bounce; let gravity and your body weight do the work.
-        """)
-        
-        st.markdown("### **3. Deep Kneeling Hip Flexor Stretch**")
-        st.write("""
-        * **Target:** Psoas, Hip Flexors, Quads.
-        * **How to do it:** Drop down into a half-kneeling position on a comfortable gym mat (one knee down, one foot flat in front of you, both knees at 90-degree angles). Squeeze the glute of your trailing leg tight, keep your torso upright, and gently push your hips forward slightly. You will feel a strong pull down the front of your hip and thigh.
-        * **Duration:** Hold for 30 seconds per side. Crucial for counteracting tension built up from sitting or heavy squatting.
-        """)
-        
-        st.markdown("### **4. Spinal Decompression (Child's Pose)**")
-        st.write("""
-        * **Target:** Lower Back, Spinal Erectors, Glutes.
-        * **How to do it:** Kneel on your gym mat, bring your big toes together, and sit your hips back completely onto your heels. Separate your knees about hip-width apart. Fold your torso forward over your thighs and extend your hands as far forward across the floor as possible, resting your forehead gently on the mat.
-        * **Duration:** Hold for 45–60 seconds. Breathe deeply into your lower back to separate and relieve compressed spinal discs after structural loading.
-        """)
+        st.markdown("### **Core**")
+        st.write("**Cable Woodchoppers:** Set pulley to shoulder height. Pull diagonally across your body to the opposite hip, rotating from your core, not just your arms.")
+
+    with col2:
+        st.markdown("### **Upper Body**")
+        st.write("**Smith Machine Bench Press:** Lie flat on the bench with the bar over your mid-chest. Control the weight down, then explode upward.")
+        st.write("**Cable Lat Pulldowns:** Pull the bar toward your upper chest. Focus on driving your elbows down and squeezing your shoulder blades together.")
+        st.write("**Cable Rows:** Keep a slight bend in your knees and a flat back. Pull the handle toward your navel, keeping elbows tucked close to your ribs.")
+
+    st.write("---")
+
+    # --- STRETCHING SECTION ---
+    st.markdown("## 🧘 Recovery Protocols")
+    
+    # Restoring your descriptive stretch information here
+    st.markdown("### **1. Frame Lat Stretch**")
+    st.caption("Target: Upper Back & Lats | 30 Seconds")
+    st.write("Grab an upright pillar firmly with both hands. Step back, hinge deeply at your hips, and drop your head between your shoulders while pushing your hips away.")
+
+    st.markdown("### **2. Doorway Chest Fly Stretch**")
+    st.caption("Target: Chest & Shoulders | 30 Seconds")
+    st.write("Place forearms flat against the vertical pillars with elbows at 90 degrees. Gently step one foot forward to open up the chest.")
+
+    st.markdown("### **3. Deep Kneeling Hip Flexor Stretch**")
+    st.caption("Target: Hips & Quads | 30 Seconds per side")
+    st.write("Half-kneeling position. Squeeze the trailing glute and push hips forward slightly. Essential for counteracting squat tension.")
+
+    st.markdown("### **4. Spinal Decompression (Child's Pose)**")
+    st.caption("Target: Lower Back | 45-60 Seconds")
+    st.write("Kneel, sit back on heels, and reach hands forward on the mat. Relieves spinal compression after structural loading.")
