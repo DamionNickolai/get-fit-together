@@ -63,16 +63,27 @@ if check_password():
     if "current_workout_list" not in st.session_state:
         st.session_state["current_workout_list"] = []
 
-    # --- 5. LOGGING SIDEBAR ---
+# --- 5. LOGGING SIDEBAR ---
     st.sidebar.header(f"Log Details for {user}")
     date = st.sidebar.date_input("Date", datetime.date.today())
-    activity = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "LISS Cardio", "Yoga/Mobility", "Rest"])
-    weight = st.sidebar.number_input("Body Weight (lbs)", min_value=0.0, step=0.1)
+    
+    # Updated Session Type list
+    activity = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "LISS Cardio", "Yoga/Mobility", "Body Weight", "Rest"])
 
-    save_triggered = False
+    # We initialize these variables at the top so they exist for every 'if' statement
+    weight = 0.0 
     all_details = ""
+    save_triggered = False
 
-    if activity == "Full Body Circuit":
+    # 1. BODY WEIGHT LOGGING
+    if activity == "Body Weight":
+        weight = st.sidebar.number_input("Current Weight (lbs)", min_value=0.0, step=0.1)
+        if st.sidebar.button("Log Weight Only"):
+            all_details = f"Weight Entry: {weight} lbs"
+            save_triggered = True
+
+    # 2. WORKOUT LOGGING
+    elif activity == "Full Body Circuit":
         st.sidebar.subheader("Add Exercises to Session")
         ex = st.sidebar.selectbox("Choose Exercise", [
             "Smith Machine Squats", "Cable Lat Pulldowns", 
@@ -103,12 +114,14 @@ if check_password():
             else:
                 st.sidebar.error("Your workout list is empty!")
                 
+    # 3. CARDIO LOGGING
     elif activity == "LISS Cardio":
         mins = st.sidebar.number_input("Duration (minutes)", min_value=0, step=5)
         if st.sidebar.button("Log Cardio Session"):
             all_details = f"{mins} min walk"
             save_triggered = True
         
+    # 4. MOBILITY LOGGING
     elif activity == "Yoga/Mobility":
         stretch_focus = st.sidebar.selectbox("Select Mobility Routine", [
             "Full Body Flow", "Lower Back Decompression & Hips", 
@@ -119,21 +132,12 @@ if check_password():
             all_details = f"Mobility: {stretch_focus}"
             save_triggered = True
         
+    # 5. REST DAY
     else:
         if st.sidebar.button("Log Rest Day"):
             all_details = "Recovery/Rest Day"
             save_triggered = True
-
-    # Master Save Logic for Google Sheets
-    if save_triggered:
-        new_row = pd.DataFrame([[user, str(date), activity, weight, all_details]], 
-                               columns=["User", "Date", "Activity", "Body Weight", "Details"])
-        updated_df = pd.concat([log_df, new_row], ignore_index=True)
-        conn.update(data=updated_df)
-        st.session_state["current_workout_list"] = []
-        st.toast("Saved to Google Sheets!")
-        st.rerun()
-
+            
     # --- 6. MAIN DASHBOARD TABS ---
     tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
 
