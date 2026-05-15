@@ -64,11 +64,11 @@ if check_password():
     # --- 5. LOGGING SIDEBAR ---
     st.sidebar.header(f"Log Details for {user}")
     date = st.sidebar.date_input("Date", datetime.date.today())
-    activity = st.sidebar.selectbox("Session Type", ["B-52 Full Body", "LISS Cardio", "Yoga/Mobility", "Rest"])
+    activity = st.sidebar.selectbox("Session Type", ["Full Body", "LISS Cardio", "Yoga/Mobility", "Rest"])
     weight = st.sidebar.number_input("Body Weight (lbs)", min_value=0.0, step=0.1)
 
     # Dynamic Input Elements Based on Session Type
-    if activity == "B-52 Full Body":
+    if activity == "Full Body":
         st.sidebar.subheader("Add Exercises to Session")
         ex = st.sidebar.selectbox("Choose Exercise", [
             "Smith Machine Squats", "Cable Lat Pulldowns", 
