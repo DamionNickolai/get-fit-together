@@ -23,7 +23,11 @@ def check_password():
 if check_password():
 
     # --- 2. APP CONFIGURATION ---
-    st.set_page_config(page_title="Home Gym Tracker", layout="wide")
+st.set_page_config(
+    page_title="Home Gym Tracker", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
 
     # --- 3. MULTI-USER & COLOR THEMING ---
     user = st.radio("Who is training today?", ["Jason", "Angelle"], horizontal=True)
