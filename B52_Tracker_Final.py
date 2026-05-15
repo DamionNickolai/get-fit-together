@@ -99,11 +99,6 @@ if check_password():
         if st.sidebar.button("Log Mobility Session"):
             all_details = f"Mobility: {stretch_focus}"
             save_triggered = True
-        
-    else:
-        if st.sidebar.button("Log Rest Day"):
-            all_details = "Recovery/Rest Day"
-            save_triggered = True
 
     # --- MASTER SAVE LOGIC ---
     if save_triggered:
