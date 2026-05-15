@@ -3,8 +3,8 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
-from garminconnect import Garmin
 
+# Must be the very first Streamlit command
 st.set_page_config(
     page_title="Home Gym Tracker", 
     layout="wide", 
@@ -58,47 +58,47 @@ if check_password():
     if "current_workout_list" not in st.session_state:
         st.session_state["current_workout_list"] = []
 
-    # --- 4.5 GARMIN INTEGRATION ---
-    @st.cache_data(ttl=3600, show_spinner=False)
-    def get_garmin_metrics(user_email, user_pass):
-        try:
-            client = Garmin(user_email, user_pass)
-            client.login()
-            today = datetime.date.today().isoformat()
-            stats = client.get_stats(today)
-            
-            steps = stats.get('totalSteps', 0)
-            rhr = stats.get('restingHeartRate', '--')
-            bb_max = stats.get('maxBodyBattery', '--')
-            
-            return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max}
-        except Exception as e:
-            return {"Steps": "Sync Error", "RHR": "--", "Body Battery": "--"}
+    # --- 4.5 GARMIN INTEGRATION (SAFEGUARDED) ---
+    try:
+        from garminconnect import Garmin
+        
+        @st.cache_data(ttl=3600, show_spinner=False)
+        def get_garmin_metrics(user_email, user_pass):
+            try:
+                client = Garmin(user_email, user_pass)
+                client.login()
+                today = datetime.date.today().isoformat()
+                stats = client.get_stats(today)
+                
+                steps = stats.get('totalSteps', 0)
+                rhr = stats.get('restingHeartRate', '--')
+                bb_max = stats.get('maxBodyBattery', '--')
+                return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max}
+            except Exception as e:
+                return {"Steps": "Sync Error", "RHR": "--", "Body Battery": "--"}
 
-    if user == "Jason":
-        g_email = st.secrets["garmin"]["jason_email"]
-        g_pass = st.secrets["garmin"]["jason_pass"]
-    else:
-        g_email = st.secrets["garmin"]["angelle_email"]
-        g_pass = st.secrets["garmin"]["angelle_pass"]
+        # Attempt to pull credentials
+        if user == "Jason":
+            g_email = st.secrets["garmin"]["jason_email"]
+            g_pass = st.secrets["garmin"]["jason_pass"]
+        else:
+            g_email = st.secrets["garmin"]["angelle_email"]
+            g_pass = st.secrets["garmin"]["angelle_pass"]
 
-    daily_metrics = get_garmin_metrics(g_email, g_pass)
+        daily_metrics = get_garmin_metrics(g_email, g_pass)
+        garmin_status = "active"
+
+    except KeyError:
+        garmin_status = "missing_secrets"
+        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--"}
+    except ImportError:
+        garmin_status = "missing_library"
+        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--"}
+    except Exception as e:
+        garmin_status = "unknown_error"
+        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--"}
     
     # --- 5. LOGGING SIDEBAR ---
     st.sidebar.header(f"Log Details for {user}")
     date = st.sidebar.date_input("Date", datetime.date.today())
-    activity = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "Cardio", "Yoga/Mobility", "Body Weight"])
-
-    weight = 0.0 
-    all_details = ""
-    save_triggered = False
-
-    if activity == "Body Weight":
-        weight = st.sidebar.number_input("Current Weight (lbs)", min_value=0.0, step=0.1)
-        if st.sidebar.button("Log Weight Only", use_container_width=True):
-            all_details = f"Weight Entry: {weight} lbs"
-            save_triggered = True
-
-    elif activity == "Full Body Circuit":
-        st.sidebar.subheader("Add Exercises")
-        ex = st.sidebar.selectbox("Choose Exercise", ["Smith Machine Squats", "Cable Lat Pulldowns", "Smith Machine Bench Press", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
+    activity = st
