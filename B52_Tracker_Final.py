@@ -46,19 +46,20 @@ if check_password():
     if "current_workout_list" not in st.session_state:
         st.session_state["current_workout_list"] = []
 
-    # --- 5. LOGGING SIDEBAR ---
+# --- 5. LOGGING SIDEBAR ---
     st.sidebar.header(f"Log Details for {user}")
     date = st.sidebar.date_input("Date", datetime.date.today())
-    activity = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "LISS Cardio", "Yoga/Mobility", "Body Weight""])
+    
+    # 1. Removed "Rest" from this list
+    activity = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "LISS Cardio", "Yoga/Mobility", "Body Weight"])
 
-    # Initialize save variables
     weight = 0.0 
     all_details = ""
     save_triggered = False
 
     if activity == "Body Weight":
         weight = st.sidebar.number_input("Current Weight (lbs)", min_value=0.0, step=0.1)
-        if st.sidebar.button("Log Weight"):
+        if st.sidebar.button("Log Weight Only"):
             all_details = f"Weight Entry: {weight} lbs"
             save_triggered = True
 
@@ -80,13 +81,13 @@ if check_password():
                 st.session_state["current_workout_list"] = []
                 st.rerun()
 
-        st.sidebar.markdown("---")
-        if st.sidebar.button("💾 SAVE ENTIRE WORKOUT", type="primary"):
-            if st.session_state["current_workout_list"]:
-                all_details = " | ".join(st.session_state["current_workout_list"])
-                save_triggered = True
-            else:
-                st.sidebar.error("Workout list is empty!")
+            st.sidebar.markdown("---")
+            if st.sidebar.button("💾 SAVE ENTIRE WORKOUT", type="primary"):
+                if st.session_state["current_workout_list"]:
+                    all_details = " | ".join(st.session_state["current_workout_list"])
+                    save_triggered = True
+                else:
+                    st.sidebar.error("Workout list is empty!")
                 
     elif activity == "LISS Cardio":
         mins = st.sidebar.number_input("Duration (minutes)", min_value=0, step=5)
@@ -94,7 +95,8 @@ if check_password():
             all_details = f"{mins} min walk"
             save_triggered = True
         
-    elif activity == "Yoga/Mobility":
+    # 2. Changed this from 'elif' to 'else' since it's the last option now
+    else: 
         stretch_focus = st.sidebar.selectbox("Select Mobility", ["Full Body Flow", "Lower Back & Hips", "Chest & Lat Opening", "Hamstring & Glute", "Custom"])
         if st.sidebar.button("Log Mobility Session"):
             all_details = f"Mobility: {stretch_focus}"
