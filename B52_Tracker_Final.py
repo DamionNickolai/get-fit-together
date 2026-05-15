@@ -58,7 +58,7 @@ if check_password():
 
     if activity == "Body Weight":
         weight = st.sidebar.number_input("Current Weight (lbs)", min_value=0.0, step=0.1)
-        if st.sidebar.button("Log Weight Only"):
+        if st.sidebar.button("Log Weight"):
             all_details = f"Weight Entry: {weight} lbs"
             save_triggered = True
 
