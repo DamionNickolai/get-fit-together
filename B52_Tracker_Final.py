@@ -28,7 +28,25 @@ if check_password():
     # --- 3. MULTI-USER & COLOR THEMING ---
     user = st.radio("Who is training today?", ["Jason", "Angelle"], horizontal=True)
     page_bg_color = "#1E3A8A" if user == "Jason" else "#0D9488"
-    st.markdown(f"<style>.stApp {{background-color: {page_bg_color}; color: white;}} [data-testid='stSidebar'] {{background-color: rgba(255, 255, 255, 0.1);}} .stTabs [data-baseweb='tab'] {{color: white !important;}}</style>", unsafe_allow_html=True)
+    # Set sidebar color based on user
+    side_bg = "#162A61" if user == "Jason" else "#0A6E65"
+
+    st.markdown(f"""
+        <style>
+        .stApp {{
+            background-color: {page_bg_color};
+            color: white;
+        }}
+        /* This makes the sidebar solid on mobile so nothing bleeds through */
+        [data-testid="stSidebar"] {{
+            background-color: {side_bg} !important;
+            opacity: 1 !important;
+        }}
+        .stTabs [data-baseweb="tab"] {{
+            color: white !important;
+        }}
+        </style>
+        """, unsafe_allow_html=True)
     st.title(f"💪 Home Gym: {user}'s Session")
 
     # --- 4. CONNECT TO GOOGLE SHEETS (WITH CACHING TO REDUCE LAG) ---
