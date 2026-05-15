@@ -151,13 +151,66 @@ if check_password():
     tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
 
     with tab1:
-        # Only showing weight charts for the active user
+        # --- SECTION A: WEIGHT JOURNEY ---
         user_df = log_df[(log_df["User"] == user) & (log_df["Body Weight"] > 0)] if not log_df.empty else pd.DataFrame()
         if not user_df.empty:
-            st.subheader(f"{user}'s Weight Journey")
+            st.subheader(f"⚖️ {user}'s Weight Journey")
             st.line_chart(user_df.set_index("Date")["Body Weight"])
-        else:
-            st.info("No weight data logged yet.")
+        
+        st.divider()
+
+        # --- SECTION B: STRENGTH DASHBOARD ---
+        st.subheader("🚀 Strength Dashboard")
+        if not log_df.empty:
+            lift_data = log_df[(log_df["User"] == user) & (log_df["Activity"] == "Full Body Circuit")]
+            
+            if not lift_data.empty:
+                # 1. HELPER FUNCTION TO GET DATA
+                def get_lift_df(exercise_name):
+                    records = []
+                    for _, row in lift_data.iterrows():
+                        if exercise_name in row["Details"]:
+                            try:
+                                parts = [p.strip() for p in row["Details"].split("|") if exercise_name in p]
+                                for p in parts:
+                                    raw_stat = p.split('(')[-1].split(')')[0]
+                                    stats = raw_stat.replace(' ', '').split('x')
+                                    if len(stats) == 3:
+                                        w, r = float(stats[1]), float(stats[2])
+                                        est_1rm = w * (36 / (37 - r)) if r < 37 else w
+                                        records.append({"Date": row["Date"], "Weight": w, "Est_1RM": round(est_1rm, 1)})
+                            except: continue
+                    return pd.DataFrame(records).set_index("Date") if records else pd.DataFrame()
+
+                # 2. THE BIG THREE (Side-by-Side or Stacked on Mobile)
+                st.markdown("### The Big Three")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.caption("Smith Machine Squats")
+                    df_squat = get_lift_df("Smith Machine Squats")
+                    if not df_squat.empty: st.line_chart(df_squat["Est_1RM"])
+                    else: st.info("No squat data.")
+
+                with col2:
+                    st.caption("Smith Machine Bench Press")
+                    df_bench = get_lift_df("Smith Machine Bench Press")
+                    if not df_bench.empty: st.line_chart(df_bench["Est_1RM"])
+                    else: st.info("No bench data.")
+
+                st.markdown("---")
+                
+                # 3. OTHER LIFTS SELECTOR
+                st.markdown("### Specialized Tracking")
+                other_ex = st.selectbox("Select other exercise", ["Cable Lat Pulldowns", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
+                df_other = get_lift_df(other_ex)
+                if not df_other.empty:
+                    st.line_chart(df_other[["Weight", "Est_1RM"]])
+                else:
+                    st.info(f"No data for {other_ex}")
+
+            else:
+                st.info("Log some 'Full Body Circuit' sessions to see your strength charts!")
 
     with tab2:
         st.subheader(f"{user}'s Training History")
