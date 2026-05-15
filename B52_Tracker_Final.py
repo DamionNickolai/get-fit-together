@@ -80,7 +80,7 @@ if check_password():
         
         if st.sidebar.button("➕ Add Exercise to List"):
             st.session_state["current_workout_list"].append(f"{ex} ({lbs} lbs x {reps})")
-            st.sidebar.toast(f"Added {ex}!")
+            st.toast(f"Added {ex}!")
 
         if st.session_state["current_workout_list"]:
             st.sidebar.write("**Current Session Stack:**")
