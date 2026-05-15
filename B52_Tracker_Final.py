@@ -47,6 +47,43 @@ if check_password():
     if "current_workout_list" not in st.session_state:
         st.session_state["current_workout_list"] = []
 
+    # --- 4.5 GARMIN INTEGRATION ---
+    from garminconnect import Garmin
+    import datetime
+
+    # Cache this for 1 hour (3600 seconds) so Garmin doesn't block the app
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def get_garmin_metrics(user_email, user_pass):
+        try:
+            # Log in to Garmin
+            client = Garmin(user_email, user_pass)
+            client.login()
+            
+            # Fetch today's stats
+            today = datetime.date.today().isoformat()
+            stats = client.get_stats(today)
+            
+            # Extract the cool stuff (Garmin sometimes returns None if no data yet)
+            steps = stats.get('totalSteps', 0)
+            rhr = stats.get('restingHeartRate', '--')
+            bb_max = stats.get('maxBodyBattery', '--')
+            
+            return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max}
+        except Exception as e:
+            # If Garmin changes their login or the server is down, don't crash the app
+            return {"Steps": "Sync Error", "RHR": "--", "Body Battery": "--"}
+
+    # Determine which credentials to use based on the radio button
+    if user == "Jason":
+        g_email = st.secrets["garmin"]["jason_email"]
+        g_pass = st.secrets["garmin"]["jason_pass"]
+    else:
+        g_email = st.secrets["garmin"]["angelle_email"]
+        g_pass = st.secrets["garmin"]["angelle_pass"]
+
+    # Fetch the data!
+    daily_metrics = get_garmin_metrics(g_email, g_pass)
+    
     # --- 5. LOGGING SIDEBAR ---
     st.sidebar.header(f"Log Details for {user}")
     date = st.sidebar.date_input("Date", datetime.date.today())
@@ -163,6 +200,14 @@ if check_password():
         st.subheader("🚀 Strength Dashboard")
         if not log_df.empty:
             lift_data = log_df[(log_df["User"] == user) & (log_df["Activity"] == "Full Body Circuit")]
+
+            # --- GARMIN METRICS DISPLAY ---
+        st.markdown("### ⌚ Today's Garmin Vitals")
+        g_col1, g_col2, g_col3 = st.columns(3)
+        g_col1.metric("Steps", daily_metrics["Steps"])
+        g_col2.metric("Resting Heart Rate", f"{daily_metrics['RHR']} bpm")
+        g_col3.metric("Peak Body Battery", daily_metrics["Body Battery"])
+        st.markdown("---")
             
             if not lift_data.empty:
                 # 1. HELPER FUNCTION TO GET DATA
