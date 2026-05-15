@@ -72,7 +72,7 @@ if check_password():
         st.sidebar.subheader("Add Exercises")
         ex = st.sidebar.selectbox("Choose Exercise", ["Smith Machine Squats", "Cable Lat Pulldowns", "Smith Machine Bench Press", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
         
-        # --- MEMORY LOGIC: SHOW LAST LIFT (Now with Bold Green Contrast) ---
+        # --- ENHANCED MEMORY LOGIC: SIMPLIFIED OUTPUT ---
         if not log_df.empty:
             try:
                 has_details = log_df['Details'].notna()
@@ -81,8 +81,19 @@ if check_password():
                     last_entry = str(past_sets.iloc[-1]["Details"])
                     parts = [p.strip() for p in last_entry.split("|") if ex.lower() in p.lower()]
                     if parts:
-                        # Using Markdown for a distinct "App" feel with green text
-                        st.sidebar.markdown(f"🟢 **Last time:** `{parts[-1]}`")
+                        # Extracting just the numbers inside the parentheses
+                        # e.g., "Squats (3x150x12)" -> "150x12"
+                        raw_stat = parts[-1].split('(')[-1].split(')')[0]
+                        stats = raw_stat.split('x')
+                        
+                        # If it's the new 3-part format (Sets x Lbs x Reps), take the last two
+                        if len(stats) == 3:
+                            display_stat = f"{stats[1]} lbs x {stats[2]} reps"
+                        else:
+                            # Fallback for your older 2-part logs
+                            display_stat = raw_stat.replace('lbs', '').replace('x', ' lbs x ') + " reps"
+                            
+                        st.sidebar.markdown(f"🟢 **Last time:** `{display_stat}`")
             except:
                 st.sidebar.caption("History currently unavailable.")
 
