@@ -4,7 +4,6 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 
-# Must be the very first Streamlit command
 st.set_page_config(
     page_title="Home Gym Tracker", 
     layout="wide", 
@@ -57,46 +56,6 @@ if check_password():
 
     if "current_workout_list" not in st.session_state:
         st.session_state["current_workout_list"] = []
-
-    # --- 4.5 GARMIN INTEGRATION (SAFEGUARDED) ---
-    try:
-        from garminconnect import Garmin
-        
-        @st.cache_data(ttl=3600, show_spinner=False)
-        def get_garmin_metrics(user_email, user_pass):
-            try:
-                client = Garmin(user_email, user_pass)
-                client.login()
-                today = datetime.date.today().isoformat()
-                stats = client.get_stats(today)
-                
-                steps = stats.get('totalSteps', 0)
-                rhr = stats.get('restingHeartRate', '--')
-                bb_max = stats.get('maxBodyBattery', '--')
-                return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max}
-            except Exception as e:
-                return {"Steps": "Sync Error", "RHR": "--", "Body Battery": "--"}
-
-        # Attempt to pull credentials
-        if user == "Jason":
-            g_email = st.secrets["garmin"]["jason_email"]
-            g_pass = st.secrets["garmin"]["jason_pass"]
-        else:
-            g_email = st.secrets["garmin"]["angelle_email"]
-            g_pass = st.secrets["garmin"]["angelle_pass"]
-
-        daily_metrics = get_garmin_metrics(g_email, g_pass)
-        garmin_status = "active"
-
-    except KeyError:
-        garmin_status = "missing_secrets"
-        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--"}
-    except ImportError:
-        garmin_status = "missing_library"
-        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--"}
-    except Exception as e:
-        garmin_status = "unknown_error"
-        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--"}
     
     # --- 5. LOGGING SIDEBAR ---
     st.sidebar.header(f"Log Details for {user}")
@@ -194,24 +153,7 @@ if check_password():
     tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
 
     with tab1:
-        # --- SECTION A: GARMIN METRICS ---
-        st.subheader("⌚ Today's Garmin Vitals")
-        
-        if garmin_status == "missing_secrets":
-            st.error("⚠️ Garmin Secrets are missing. Check your Streamlit Cloud Settings -> Secrets.")
-        elif garmin_status == "missing_library":
-            st.error("⚠️ 'garminconnect' library is missing. Make sure it is in your requirements.txt file.")
-        elif garmin_status == "unknown_error":
-            st.error("⚠️ An unknown error occurred with the Garmin connection.")
-            
-        g_col1, g_col2, g_col3 = st.columns(3)
-        g_col1.metric("Steps", daily_metrics["Steps"])
-        g_col2.metric("Resting Heart Rate", f"{daily_metrics['RHR']} bpm")
-        g_col3.metric("Peak Body Battery", daily_metrics["Body Battery"])
-        
-        st.divider()
-
-        # --- SECTION B: WEIGHT JOURNEY ---
+        # --- SECTION A: WEIGHT JOURNEY ---
         user_df = log_df[(log_df["User"] == user) & (log_df["Body Weight"] > 0)] if not log_df.empty else pd.DataFrame()
         if not user_df.empty:
             st.subheader(f"⚖️ {user}'s Weight Journey")
@@ -219,7 +161,7 @@ if check_password():
         
         st.divider()
 
-        # --- SECTION C: STRENGTH DASHBOARD ---
+        # --- SECTION B: STRENGTH DASHBOARD ---
         st.subheader("🚀 Strength Dashboard")
         if not log_df.empty:
             lift_data = log_df[(log_df["User"] == user) & (log_df["Activity"] == "Full Body Circuit")]
