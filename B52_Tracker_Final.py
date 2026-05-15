@@ -72,7 +72,7 @@ if check_password():
         st.sidebar.subheader("Add Exercises")
         ex = st.sidebar.selectbox("Choose Exercise", ["Smith Machine Squats", "Cable Lat Pulldowns", "Smith Machine Bench Press", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
         
-        # --- MEMORY LOGIC: SHOW LAST LIFT ---
+        # --- MEMORY LOGIC: SHOW LAST LIFT (Now with Bold Green Contrast) ---
         if not log_df.empty:
             try:
                 has_details = log_df['Details'].notna()
@@ -81,15 +81,23 @@ if check_password():
                     last_entry = str(past_sets.iloc[-1]["Details"])
                     parts = [p.strip() for p in last_entry.split("|") if ex.lower() in p.lower()]
                     if parts:
-                        st.sidebar.info(f"💡 Last time: {parts[-1]}")
+                        # Using Markdown for a distinct "App" feel with green text
+                        st.sidebar.markdown(f"🟢 **Last time:** `{parts[-1]}`")
             except:
                 st.sidebar.caption("History currently unavailable.")
 
-        lbs = st.sidebar.number_input("Max Weight (lbs)", min_value=0, step=5)
-        reps = st.sidebar.number_input("Reps", min_value=0, step=1)
+        # --- UPDATED INPUTS WITH SETS ---
+        col_s, col_w, col_r = st.sidebar.columns(3) # Split into 3 small columns
+        with col_s:
+            sets = st.number_input("Sets", min_value=1, step=1, value=3)
+        with col_w:
+            lbs = st.number_input("Lbs", min_value=0, step=5)
+        with col_r:
+            reps = st.number_input("Reps", min_value=0, step=1)
         
         if st.sidebar.button("➕ Add Exercise to List", use_container_width=True):
-            st.session_state["current_workout_list"].append(f"{ex} ({lbs} lbs x {reps})")
+            # Format now includes sets: "Exercise (Sets x Lbs x Reps)"
+            st.session_state["current_workout_list"].append(f"{ex} ({sets}x{lbs}x{reps})")
             st.toast(f"Added {ex}!")
 
         if st.session_state["current_workout_list"]:
