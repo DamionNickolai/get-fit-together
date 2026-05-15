@@ -1,7 +1,7 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
-import os
 
 # --- 1. PASSWORD PROTECTION SYSTEM ---
 def check_password():
@@ -9,7 +9,7 @@ def check_password():
     def password_entered():
         if st.session_state["password"] == st.secrets["password"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Clear password from memory
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
@@ -23,7 +23,6 @@ def check_password():
     else:
         return True
 
-# Only run the app if the password checks out
 if check_password():
 
     # --- 2. APP CONFIGURATION ---
@@ -32,7 +31,6 @@ if check_password():
     # --- 3. MULTI-USER & COLOR THEMING ---
     user = st.radio("Who is training today?", ["Jason", "Angelle"], horizontal=True)
 
-    # Dynamic Background Color Shift
     page_bg_color = "#1E3A8A" if user == "Jason" else "#0D9488"
     st.markdown(f"""
         <style>
@@ -51,13 +49,17 @@ if check_password():
 
     st.title(f"💪 Home Gym: {user}'s Session")
 
-    # --- 4. DATABASE INITIALIZATION ---
-    FILE_NAME = "family_workout_log.csv"
-    if not os.path.exists(FILE_NAME):
-        df = pd.DataFrame(columns=["User", "Date", "Activity", "Body Weight", "Details"])
-        df.to_csv(FILE_NAME, index=False)
+    # --- 4. CONNECT TO GOOGLE SHEETS ---
+    conn = st.connection("gsheets", type=GSheetsConnection)
 
-    # Initialize temporary workout list
+    # Initial read to establish log_df
+    try:
+        log_df = conn.read(ttl=0)
+        if not log_df.empty:
+            log_df['Date'] = log_df['Date'].astype(str)
+    except:
+        log_df = pd.DataFrame(columns=["User", "Date", "Activity", "Body Weight", "Details"])
+
     if "current_workout_list" not in st.session_state:
         st.session_state["current_workout_list"] = []
 
@@ -67,7 +69,9 @@ if check_password():
     activity = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "LISS Cardio", "Yoga/Mobility", "Rest"])
     weight = st.sidebar.number_input("Body Weight (lbs)", min_value=0.0, step=0.1)
 
-    # Dynamic Input Elements Based on Session Type
+    save_triggered = False
+    all_details = ""
+
     if activity == "Full Body Circuit":
         st.sidebar.subheader("Add Exercises to Session")
         ex = st.sidebar.selectbox("Choose Exercise", [
@@ -95,24 +99,15 @@ if check_password():
         if st.sidebar.button("💾 SAVE ENTIRE WORKOUT", type="primary"):
             if st.session_state["current_workout_list"]:
                 all_details = " | ".join(st.session_state["current_workout_list"])
-                new_entry = pd.DataFrame([[user, date, activity, weight, all_details]], 
-                                         columns=["User", "Date", "Activity", "Body Weight", "Details"])
-                new_entry.to_csv(FILE_NAME, mode='a', header=False, index=False)
-                
-                st.session_state["current_workout_list"] = []
-                st.sidebar.success(f"Entire session saved, {user}!")
-                st.rerun()
+                save_triggered = True
             else:
-                st.sidebar.error("Your workout list is empty! Add exercises first.")
+                st.sidebar.error("Your workout list is empty!")
                 
     elif activity == "LISS Cardio":
         mins = st.sidebar.number_input("Duration (minutes)", min_value=0, step=5)
         if st.sidebar.button("Log Cardio Session"):
-            new_entry = pd.DataFrame([[user, date, activity, weight, f"{mins} min walk"]], 
-                                     columns=["User", "Date", "Activity", "Body Weight", "Details"])
-            new_entry.to_csv(FILE_NAME, mode='a', header=False, index=False)
-            st.sidebar.success("Cardio saved!")
-            st.rerun()
+            all_details = f"{mins} min walk"
+            save_triggered = True
         
     elif activity == "Yoga/Mobility":
         stretch_focus = st.sidebar.selectbox("Select Mobility Routine", [
@@ -121,25 +116,26 @@ if check_password():
             "Custom/Static Stretching"
         ])
         if st.sidebar.button("Log Mobility Session"):
-            new_entry = pd.DataFrame([[user, date, activity, weight, f"Mobility: {stretch_focus}"]], 
-                                     columns=["User", "Date", "Activity", "Body Weight", "Details"])
-            new_entry.to_csv(FILE_NAME, mode='a', header=False, index=False)
-            st.sidebar.success("Mobility saved!")
-            st.rerun()
+            all_details = f"Mobility: {stretch_focus}"
+            save_triggered = True
         
     else:
         if st.sidebar.button("Log Rest Day"):
-            new_entry = pd.DataFrame([[user, date, activity, weight, "Recovery/Rest Day"]], 
-                                     columns=["User", "Date", "Activity", "Body Weight", "Details"])
-            new_entry.to_csv(FILE_NAME, mode='a', header=False, index=False)
-            st.sidebar.success("Rest day logged!")
-            st.rerun()
+            all_details = "Recovery/Rest Day"
+            save_triggered = True
+
+    # Master Save Logic for Google Sheets
+    if save_triggered:
+        new_row = pd.DataFrame([[user, str(date), activity, weight, all_details]], 
+                               columns=["User", "Date", "Activity", "Body Weight", "Details"])
+        updated_df = pd.concat([log_df, new_row], ignore_index=True)
+        conn.update(data=updated_df)
+        st.session_state["current_workout_list"] = []
+        st.toast("Saved to Google Sheets!")
+        st.rerun()
 
     # --- 6. MAIN DASHBOARD TABS ---
-    tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "🧘 Exercise Descriptions"])
-
-    # Load data for tabs
-    log_df = pd.read_csv(FILE_NAME)
+    tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
 
     with tab1:
         user_df = log_df[log_df["User"] == user] if not log_df.empty else pd.DataFrame()
@@ -149,81 +145,59 @@ if check_password():
             if not weight_df.empty:
                 st.line_chart(weight_df.set_index("Date")["Body Weight"])
             
-            total_sessions = user_df.shape[0]
-            mobility_sessions = user_df[user_df["Activity"] == "Yoga/Mobility"].shape[0]
-            
             col1, col2 = st.columns(2)
-            col1.metric("Total Sessions Tracked", total_sessions)
-            col2.metric("Dedicated Mobility Days", mobility_sessions)
+            col1.metric("Total Sessions Tracked", len(user_df))
+            col2.metric("Dedicated Mobility Days", len(user_df[user_df["Activity"] == "Yoga/Mobility"]))
         else:
-            st.info("No data logged yet. Use the sidebar to log your first workout session!")
+            st.info("No data logged yet.")
 
     with tab2:
         st.subheader("Shared Family Training Log")
-        st.caption("Check the boxes on the left side of any row and use Delete/Backspace or the trash icon to remove logs.")
-        
+        st.caption("Select rows and use Delete/Backspace to remove logs, then click Confirm.")
         if not log_df.empty:
             sorted_df = log_df.sort_values(by="Date", ascending=False)
-            
             edited_df = st.data_editor(
                 sorted_df,
-                hide_index=False,
                 num_rows="dynamic",
                 use_container_width=True,
                 disabled=["User", "Date", "Activity", "Body Weight", "Details"], 
                 key="log_editor"
             )
-            
             if len(edited_df) < len(sorted_df):
-                if st.button("🔴 Confirm Deletion and Resave Log", type="primary"):
-                    edited_df.to_csv(FILE_NAME, index=False)
-                    st.success("Log updated successfully!")
+                if st.button("🔴 Confirm Deletion and Update Sheet", type="primary"):
+                    conn.update(data=edited_df)
+                    st.success("Google Sheet Updated!")
                     st.rerun()
-        else:
-            st.write("The log is currently empty.")
 
-    # --- RESTORED DESCRIPTIVE Exercise Descriptions ---
-with tab3:
-    st.subheader("Home Gym Reference Library")
-    st.info("Technical cues for your lifts and recovery stretches.")
-
-    # --- EXERCISE SECTION ---
-    st.markdown("## 🏋️ Workout Exercises")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### **Lower Body**")
-        st.write("**Smith Machine Squats:** Set the bar at shoulder height. Keep feet shoulder-width apart. Focus on sitting 'back' into your hips and keeping your chest up.")
-        st.write("**Smith Machine RDLs:** Hinge at the hips with a slight knee bend. Lower the bar to mid-shin, feeling the stretch in your hamstrings, then squeeze glutes to stand.")
+    with tab3:
+        st.subheader("Home Gym Reference Library")
+        st.markdown("## 🏋️ Workout Exercises")
+        col_ex1, col_ex2 = st.columns(2)
+        with col_ex1:
+            st.markdown("### **Lower Body**")
+            st.write("**Smith Machine Squats:** Focus on sitting 'back' into hips, chest up.")
+            st.write("**Smith Machine RDLs:** Hinge at hips, bar to mid-shin, squeeze glutes.")
+        with col_ex2:
+            st.markdown("### **Upper Body**")
+            st.write("**Smith Machine Bench Press:** Control descent, explode upward.")
+            st.write("**Cable Lat Pulldowns:** Drive elbows down, squeeze shoulder blades.")
+            st.write("**Cable Rows:** Pull toward navel, squeeze shoulder blades together.")
         
-        st.markdown("### **Core**")
-        st.write("**Cable Woodchoppers:** Set pulley to shoulder height. Pull diagonally across your body to the opposite hip, rotating from your core, not just your arms.")
+        st.write("---")
+        st.markdown("## 🧘 Recovery Protocols")
+        
+        st.markdown("### **1. Frame Lat Stretch**")
+        st.caption("Target: Upper Back & Lats | 30 Seconds")
+        st.write("Grab an upright pillar firmly with both hands. Step back, hinge deeply at your hips, and drop your head between your shoulders while pushing your hips away.")
 
-    with col2:
-        st.markdown("### **Upper Body**")
-        st.write("**Smith Machine Bench Press:** Lie flat on the bench with the bar over your mid-chest. Control the weight down, then explode upward.")
-        st.write("**Cable Lat Pulldowns:** Pull the bar toward your upper chest. Focus on driving your elbows down and squeezing your shoulder blades together.")
-        st.write("**Cable Rows:** Keep a slight bend in your knees and a flat back. Pull the handle toward your navel, keeping elbows tucked close to your ribs.")
+        st.markdown("### **2. Doorway Chest Fly Stretch**")
+        st.caption("Target: Chest & Shoulders | 30 Seconds")
+        st.write("Place forearms flat against the vertical pillars with elbows at 90 degrees. Gently step one foot forward to open up the chest.")
 
-    st.write("---")
+        st.markdown("### **3. Deep Kneeling Hip Flexor Stretch**")
+        st.caption("Target: Hips & Quads | 30 Seconds per side")
+        st.write("Half-kneeling position. Squeeze the trailing glute and push hips forward slightly. Essential for counteracting squat tension.")
 
-    # --- STRETCHING SECTION ---
-    st.markdown("## 🧘 Exercise Descriptions")
-    
-    # Restoring your descriptive stretch information here
-    st.markdown("### **1. Frame Lat Stretch**")
-    st.caption("Target: Upper Back & Lats | 30 Seconds")
-    st.write("Grab an upright pillar firmly with both hands. Step back, hinge deeply at your hips, and drop your head between your shoulders while pushing your hips away.")
-
-    st.markdown("### **2. Doorway Chest Fly Stretch**")
-    st.caption("Target: Chest & Shoulders | 30 Seconds")
-    st.write("Place forearms flat against the vertical pillars with elbows at 90 degrees. Gently step one foot forward to open up the chest.")
-
-    st.markdown("### **3. Deep Kneeling Hip Flexor Stretch**")
-    st.caption("Target: Hips & Quads | 30 Seconds per side")
-    st.write("Half-kneeling position. Squeeze the trailing glute and push hips forward slightly. Essential for counteracting squat tension.")
-
-    st.markdown("### **4. Spinal Decompression (Child's Pose)**")
-    st.caption("Target: Lower Back | 45-60 Seconds")
-    st.write("Kneel, sit back on heels, and reach hands forward on the mat. Relieves spinal compression after structural loading.")
+        st.markdown("### **4. Spinal Decompression (Child's Pose)**")
+        st.caption("Target: Lower Back | 45-60 Seconds")
+        st.write("Kneel, sit back on heels, and reach hands forward on the mat. Relieves spinal compression after structural loading.")
