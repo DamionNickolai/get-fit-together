@@ -136,7 +136,7 @@ if check_password():
             st.rerun()
 
     # --- 6. MAIN DASHBOARD TABS ---
-    tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "🧘 Recovery Protocols"])
+    tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "🧘 Exercise Descriptions"])
 
     # Load data for tabs
     log_df = pd.read_csv(FILE_NAME)
@@ -182,7 +182,7 @@ if check_password():
         else:
             st.write("The log is currently empty.")
 
-    # --- RESTORED DESCRIPTIVE RECOVERY PROTOCOLS ---
+    # --- RESTORED DESCRIPTIVE Exercise Descriptions ---
 with tab3:
     st.subheader("Home Gym Reference Library")
     st.info("Technical cues for your lifts and recovery stretches.")
@@ -209,7 +209,7 @@ with tab3:
     st.write("---")
 
     # --- STRETCHING SECTION ---
-    st.markdown("## 🧘 Recovery Protocols")
+    st.markdown("## 🧘 Exercise Descriptions")
     
     # Restoring your descriptive stretch information here
     st.markdown("### **1. Frame Lat Stretch**")
