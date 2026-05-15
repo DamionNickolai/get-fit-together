@@ -14,11 +14,9 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # First-time login screen
         st.text_input("Enter Password", type="password", on_change=password_entered, key="password")
         return False
     elif not st.session_state["password_correct"]:
-        # Wrong password screen
         st.text_input("Enter Password", type="password", on_change=password_entered, key="password")
         st.error("😕 Password incorrect")
         return False
@@ -56,7 +54,8 @@ if check_password():
     # --- 4. DATABASE INITIALIZATION ---
     FILE_NAME = "family_workout_log.csv"
     if not os.path.exists(FILE_NAME):
-        df = pd.DataFrame(columns=["User", "Date", "Activity", "Body Weight", "Details", "Mobility Done"])
+        # Kept the structure clean, tracking the details of whatever workout or stretch is chosen
+        df = pd.DataFrame(columns=["User", "Date", "Activity", "Body Weight", "Details"])
         df.to_csv(FILE_NAME, index=False)
 
     # --- 5. LOGGING SIDEBAR ---
@@ -76,24 +75,29 @@ if check_password():
         lbs = st.sidebar.number_input("Max Weight (lbs)", min_value=0, step=5)
         reps = st.sidebar.number_input("Reps", min_value=0, step=1)
         details = f"{ex}: {lbs} lbs x {reps}"
+        
     elif activity == "LISS Cardio":
         mins = st.sidebar.number_input("Duration (minutes)", min_value=0, step=5)
         details = f"{mins} min walk"
+        
+    elif activity == "Yoga/Mobility":
+        # New drop-down selection for the specific stretch session completed
+        stretch_focus = st.sidebar.selectbox("Select Mobility Routine", [
+            "Full Body Flow",
+            "Lower Back Decompression & Hips",
+            "Upper Body Chest & Lat Opening",
+            "Hamstring & Glute Flexibility",
+            "Custom/Static Stretching"
+        ])
+        details = f"Mobility: {stretch_focus}"
+        
     else:
         details = "Recovery/Rest Day"
 
-    # 40+ Recovery Checklist
-    st.sidebar.subheader("Post-Workout Mobility")
-    st.sidebar.caption("Essential for joint longevity and lower back health.")
-    m1 = st.sidebar.checkbox("Chest & Lat Stretch (30s)")
-    m2 = st.sidebar.checkbox("Hip Flexor Stretch (30s)")
-    m3 = st.sidebar.checkbox("Hamstring/Glute Stretch (30s)")
-    mobility_status = "Complete" if (m1 and m2 and m3) else "Partial/None"
-
     # Save Button
     if st.sidebar.button("Log Workout Data"):
-        new_entry = pd.DataFrame([[user, date, activity, weight, details, mobility_status]], 
-                                 columns=["User", "Date", "Activity", "Body Weight", "Details", "Mobility Done"])
+        new_entry = pd.DataFrame([[user, date, activity, weight, details]], 
+                                 columns=["User", "Date", "Activity", "Body Weight", "Details"])
         new_entry.to_csv(FILE_NAME, mode='a', header=False, index=False)
         st.sidebar.success(f"Session saved successfully, {user}!")
 
@@ -106,18 +110,17 @@ if check_password():
         
         if not user_df.empty:
             st.subheader(f"{user}'s Weight Journey")
-            # Clear text indexing for clean timelines
             weight_df = user_df.dropna(subset=["Body Weight"])
             if not weight_df.empty:
                 st.line_chart(weight_df.set_index("Date")["Body Weight"])
             
-            # Mobility Metrics
+            # Simplified Tracking Metrics
             total_sessions = user_df.shape[0]
-            completed_mobility = user_df[user_df["Mobility Done"] == "Complete"].shape[0]
+            mobility_sessions = user_df[user_df["Activity"] == "Yoga/Mobility"].shape[0]
             
             col1, col2 = st.columns(2)
             col1.metric("Total Sessions Tracked", total_sessions)
-            col2.metric("Completed Mobility Routines", completed_mobility)
+            col2.metric("Dedicated Mobility Days", mobility_sessions)
         else:
             st.info("No data logged yet. Use the sidebar to log your first workout session!")
 
@@ -131,12 +134,12 @@ if check_password():
                 st.write("The log is currently empty.")
 
     with tab3:
-        st.subheader("Recommended Post-B-52 Cooldown Routine")
+        st.subheader("B-52 Post-Workout Recovery Guide")
         st.write("""
-        Maximize recovery to maintain consistent output week-over-week:
+        Even if today isn't a dedicated mobility day, take 5 minutes after using the B-52 rack to hit these core movements:
         
-        *   **1. Frame Lat Stretch:** Grab the B-52 upright frame with both hands, hinge at your hips, and drop your head between your shoulders. Hold for 30s.
-        *   **2. Doorway Chest Fly Stretch:** Step through the center of the B-52 rack, place your forearms on the safety bars or vertical pillars, and lean forward to open up the shoulders and chest.
-        *   **3. Deep Kneeling Hip Flexor Stretch:** Drop to one knee on a gym mat. Tighten your glutes and push your hips forward slightly to pull out the tension built up from heavy squatting or prolonged sitting.
-        *   **4. Spinal Decompression (Child's Pose):** Sit back onto your heels on a mat and extend your hands forward across the floor to relieve spinal compression from overhead loads.
+        *   **Frame Lat Stretch:** Grab the B-52 upright frame with both hands, hinge at your hips, and drop your head between your shoulders. Hold for 30s.
+        *   **Doorway Chest Fly Stretch:** Step through the center of the B-52 rack, place your forearms on the vertical pillars, and lean forward to open up the shoulders.
+        *   **Deep Kneeling Hip Flexor Stretch:** Drop to one knee. Tighten your glutes and push your hips forward slightly to pull out the tension from heavy squats.
+        *   **Spinal Decompression (Child's Pose):** Sit back onto your heels on a gym mat and extend your hands forward across the floor to relieve compressed spinal discs.
         """)
