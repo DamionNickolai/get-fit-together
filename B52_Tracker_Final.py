@@ -1,34 +1,24 @@
+# --- 1. APP CONFIGURATION (Move this to the very top) ---
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 
-# --- 1. PASSWORD PROTECTION SYSTEM ---
-def check_password():
-    def password_entered():
-        if st.session_state["password"] == st.secrets["password"]:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
-    if "password_correct" not in st.session_state:
-        st.text_input("Enter Password", type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.text_input("Enter Password", type="password", on_change=password_entered, key="password")
-        st.error("😕 Password incorrect")
-        return False
-    return True
-
-if check_password():
-
-    # --- 2. APP CONFIGURATION ---
 st.set_page_config(
     page_title="Home Gym Tracker", 
     layout="wide", 
     initial_sidebar_state="expanded"
 )
 
+# --- 2. PASSWORD PROTECTION SYSTEM ---
+def check_password():
+    # ... (keep your existing check_password function code here)
+    # ...
+    return True
+
+if check_password():
+    # ALL THE REST OF YOUR CODE BELOW MUST BE INDENTED 4 SPACES
+    
     # --- 3. MULTI-USER & COLOR THEMING ---
     user = st.radio("Who is training today?", ["Jason", "Angelle"], horizontal=True)
     page_bg_color = "#1E3A8A" if user == "Jason" else "#0D9488"
