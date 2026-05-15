@@ -47,7 +47,7 @@ if check_password():
         }}
         </style>
         """, unsafe_allow_html=True)
-    st.title(f"💪 Home Gym: {user}'s Session")
+    st.title(f"💪 Get Fit Together: {user}'s Session")
 
     # --- 4. CONNECT TO GOOGLE SHEETS (WITH CACHING TO REDUCE LAG) ---
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -69,7 +69,7 @@ if check_password():
     date = st.sidebar.date_input("Date", datetime.date.today())
     
     # 1. Removed "Rest" from this list
-    activity = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "LISS Cardio", "Yoga/Mobility", "Body Weight"])
+    activity = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "Cardio", "Yoga/Mobility", "Body Weight"])
 
     weight = 0.0 
     all_details = ""
@@ -107,7 +107,7 @@ if check_password():
                 else:
                     st.sidebar.error("Workout list is empty!")
                 
-    elif activity == "LISS Cardio":
+    elif activity == "Cardio":
         mins = st.sidebar.number_input("Duration (minutes)", min_value=0, step=5)
         if st.sidebar.button("Log Cardio Session", use_container_width=True):
             all_details = f"{mins} min walk"
