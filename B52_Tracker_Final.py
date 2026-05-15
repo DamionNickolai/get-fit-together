@@ -84,28 +84,30 @@ if check_password():
     elif activity == "Full Body Circuit":
         st.sidebar.subheader("Add Exercises")
         ex = st.sidebar.selectbox("Choose Exercise", ["Smith Machine Squats", "Cable Lat Pulldowns", "Smith Machine Bench Press", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
+        
+        # --- NEW MEMORY LOGIC START ---
+        if not log_df.empty:
+            # Look for the current user's history for THIS specific exercise
+            # We look for the exercise name inside the 'Details' string
+            past_sets = log_df[(log_df["User"] == user) & (log_df["Details"].str.contains(ex, na=False))]
+            
+            if not past_sets.empty:
+                # Grab the very last entry (most recent)
+                last_entry = past_sets.iloc[-1]["Details"]
+                # A quick way to find just the part related to this exercise
+                # Since we save as "Ex (lbs x reps) | Ex2 (lbs x reps)"
+                parts = [p.strip() for p in last_entry.split("|") if ex in p]
+                if parts:
+                    st.sidebar.info(f"💡 Last time: {parts[-1]}")
+            else:
+                st.sidebar.caption("No previous data found for this lift.")
+        # --- NEW MEMORY LOGIC END ---
+
         lbs = st.sidebar.number_input("Max Weight (lbs)", min_value=0, step=5)
         reps = st.sidebar.number_input("Reps", min_value=0, step=1)
         
         if st.sidebar.button("➕ Add Exercise to List", use_container_width=True):
-            st.session_state["current_workout_list"].append(f"{ex} ({lbs} lbs x {reps})")
-            st.toast(f"Added {ex}!")
-
-        if st.session_state["current_workout_list"]:
-            st.sidebar.write("**Current Session Stack:**")
-            for item in st.session_state["current_workout_list"]:
-                st.sidebar.caption(f"• {item}")
-            if st.sidebar.button("🗑️ Clear List", use_container_width=True):
-                st.session_state["current_workout_list"] = []
-                st.rerun()
-
-            st.sidebar.markdown("---")
-            if st.sidebar.button("💾 SAVE ENTIRE WORKOUT", type="primary", use_container_width=True):
-                if st.session_state["current_workout_list"]:
-                    all_details = " | ".join(st.session_state["current_workout_list"])
-                    save_triggered = True
-                else:
-                    st.sidebar.error("Workout list is empty!")
+            # ... (rest of your add logic)
                 
     elif activity == "Cardio":
         mins = st.sidebar.number_input("Duration (minutes)", min_value=0, step=5)
