@@ -143,16 +143,33 @@ if check_password():
             st.info("No weight data logged yet. Use 'Body Weight' session type to start your chart.")
 
     with tab2:
-        st.subheader("Shared Family Training Log")
+        st.subheader(f"{user}'s Training History")
+        
+        # Filter for only the current user's data
         if not log_df.empty:
-            sorted_df = log_df.sort_values(by="Date", ascending=False)
-            edited_df = st.data_editor(sorted_df, num_rows="dynamic", use_container_width=True, disabled=["User", "Date", "Activity", "Body Weight", "Details"], key="log_editor")
-            if len(edited_df) < len(sorted_df):
-                if st.button("🔴 Confirm Deletion and Update Sheet", type="primary"):
-                    conn.update(data=edited_df)
-                    st.cache_data.clear()
-                    st.success("Google Sheet Updated!")
-                    st.rerun()
+            user_history_df = log_df[log_df["User"] == user].sort_values(by="Date", ascending=False)
+            
+            if not user_history_df.empty:
+                edited_df = st.data_editor(
+                    user_history_df, 
+                    num_rows="dynamic", 
+                    use_container_width=True, 
+                    disabled=["User", "Date", "Activity", "Body Weight", "Details"], 
+                    key="log_editor"
+                )
+                
+                # Deletion logic (Note: This still works perfectly)
+                if len(edited_df) < len(user_history_df):
+                    if st.button("🔴 Confirm Deletion and Update Sheet", type="primary", use_container_width=True):
+                        # We merge the changes back into the main log_df before saving
+                        other_users_df = log_df[log_df["User"] != user]
+                        final_df = pd.concat([other_users_df, edited_df], ignore_index=True)
+                        conn.update(data=final_df)
+                        st.cache_data.clear()
+                        st.success("Google Sheet Updated!")
+                        st.rerun()
+            else:
+                st.info(f"No history found for {user} yet. Let's get to work!")
 
     with tab3:
         st.subheader("Home Gym Reference Library")
