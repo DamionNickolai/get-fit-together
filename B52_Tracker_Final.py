@@ -136,7 +136,7 @@ if check_password():
             st.rerun()
 
     # --- 6. MAIN DASHBOARD TABS ---
-    tab1, tab2, tab3, tab4 = st.tabs(["📈 Progress Charts", "📅 Training History", "🧘 Recovery Protocols", "🛠️ Manage Logs"])
+    tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "🧘 Recovery Protocols"])
 
     # Load data for tabs
     log_df = pd.read_csv(FILE_NAME)
@@ -160,8 +160,30 @@ if check_password():
 
     with tab2:
         st.subheader("Shared Family Training Log")
+        st.caption("Check the boxes on the left side of any row and use the button below to remove accidental logs.")
+        
         if not log_df.empty:
-            st.dataframe(log_df.sort_values(by="Date", ascending=False), use_container_width=True)
+            # Sort data so newest is on top
+            sorted_df = log_df.sort_values(by="Date", ascending=False)
+            
+            # Using st.data_editor to enable a native selection checkbox column
+            edited_df = st.data_editor(
+                sorted_df,
+                hide_index=False, # Keeps the core index visible so we know exactly which row to delete
+                num_rows="dynamic",
+                use_container_width=True,
+                disabled=["User", "Date", "Activity", "Body Weight", "Details"], # Block editing text rows directly
+                key="log_editor"
+            )
+            
+            # Identify if any rows were deleted or altered via selection
+            # Comparing lengths to see if user manually cut rows inside the editor
+            if len(edited_df) < len(sorted_df):
+                if st.button("🔴 Confirm Deletion and Resave Log", type="primary"):
+                    # Save the edited version back to storage
+                    edited_df.to_csv(FILE_NAME, index=False)
+                    st.success("Log updated successfully!")
+                    st.rerun()
         else:
             st.write("The log is currently empty.")
 
@@ -171,26 +193,3 @@ if check_password():
         Take 5 minutes after your circuit to hit these core movements:
         * **Frame Lat Stretch (30s)** | **Doorway Chest Fly Stretch (30s)** | **Deep Kneeling Hip Flexor Stretch (30s)** | **Child's Pose**
         """)
-
-    # --- NEW: TAB 4 - DELETION MANAGEMENT ---
-    with tab4:
-        st.subheader("Delete a Logged Entry")
-        if not log_df.empty:
-            # Create a user-friendly dropdown label combining Row index, User, Date, and Activity
-            log_df['Delete_Label'] = log_df.index.astype(str) + " - " + log_df['User'] + " (" + log_df['Date'] + "): " + log_df['Activity']
-            
-            # Select item to delete
-            item_to_delete = st.selectbox("Select row to permanently delete:", log_df['Delete_Label'].unique())
-            
-            if st.button("🔴 Permanently Delete Selected Row", type="primary"):
-                # Extract the original index from our label string
-                index_to_drop = int(item_to_delete.split(" - ")[0])
-                
-                # Drop row, drop our temporary label column, and resave the file
-                log_df = log_df.drop(index_to_drop).drop(columns=['Delete_Label'])
-                log_df.to_csv(FILE_NAME, index=False)
-                
-                st.success("Entry successfully deleted!")
-                st.rerun()
-        else:
-            st.info("No logs available to delete.")
