@@ -1,8 +1,9 @@
-# --- 1. APP CONFIGURATION (Move this to the very top) ---
+# --- 1. APP CONFIGURATION & IMPORTS ---
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
+from garminconnect import Garmin
 
 st.set_page_config(
     page_title="Home Gym Tracker", 
@@ -12,13 +13,23 @@ st.set_page_config(
 
 # --- 2. PASSWORD PROTECTION SYSTEM ---
 def check_password():
-    # ... (keep your existing check_password function code here)
-    # ...
+    def password_entered():
+        if st.session_state["password"] == st.secrets["password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["password_correct"] = False
+            
+    if "password_correct" not in st.session_state:
+        st.text_input("Enter Password", type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        st.text_input("Enter Password", type="password", on_change=password_entered, key="password")
+        st.error("😕 Password incorrect")
+        return False
     return True
 
 if check_password():
-    # ALL THE REST OF YOUR CODE BELOW MUST BE INDENTED 4 SPACES
-    
     # --- 3. MULTI-USER & COLOR THEMING ---
     user = st.radio("Who is training today?", ["Jason", "Angelle"], horizontal=True)
     page_bg_color = "#1E3A8A" if user == "Jason" else "#0D9488"
@@ -48,32 +59,22 @@ if check_password():
         st.session_state["current_workout_list"] = []
 
     # --- 4.5 GARMIN INTEGRATION ---
-    from garminconnect import Garmin
-    import datetime
-
-    # Cache this for 1 hour (3600 seconds) so Garmin doesn't block the app
     @st.cache_data(ttl=3600, show_spinner=False)
     def get_garmin_metrics(user_email, user_pass):
         try:
-            # Log in to Garmin
             client = Garmin(user_email, user_pass)
             client.login()
-            
-            # Fetch today's stats
             today = datetime.date.today().isoformat()
             stats = client.get_stats(today)
             
-            # Extract the cool stuff (Garmin sometimes returns None if no data yet)
             steps = stats.get('totalSteps', 0)
             rhr = stats.get('restingHeartRate', '--')
             bb_max = stats.get('maxBodyBattery', '--')
             
             return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max}
         except Exception as e:
-            # If Garmin changes their login or the server is down, don't crash the app
             return {"Steps": "Sync Error", "RHR": "--", "Body Battery": "--"}
 
-    # Determine which credentials to use based on the radio button
     if user == "Jason":
         g_email = st.secrets["garmin"]["jason_email"]
         g_pass = st.secrets["garmin"]["jason_pass"]
@@ -81,7 +82,6 @@ if check_password():
         g_email = st.secrets["garmin"]["angelle_email"]
         g_pass = st.secrets["garmin"]["angelle_pass"]
 
-    # Fetch the data!
     daily_metrics = get_garmin_metrics(g_email, g_pass)
     
     # --- 5. LOGGING SIDEBAR ---
@@ -101,203 +101,4 @@ if check_password():
 
     elif activity == "Full Body Circuit":
         st.sidebar.subheader("Add Exercises")
-        ex = st.sidebar.selectbox("Choose Exercise", ["Smith Machine Squats", "Cable Lat Pulldowns", "Smith Machine Bench Press", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
-        
-        # --- UNIVERSAL MEMORY LOGIC (Fixes the Index Error) ---
-        if not log_df.empty:
-            try:
-                has_details = log_df['Details'].notna()
-                past_sets = log_df[(log_df["User"] == user) & (has_details) & (log_df["Details"].str.contains(ex, case=False, na=False))]
-                
-                if not past_sets.empty:
-                    last_entry = str(past_sets.iloc[-1]["Details"])
-                    parts = [p.strip() for p in last_entry.split("|") if ex.lower() in p.lower()]
-                    
-                    if parts:
-                        # Extract the stuff inside the ()
-                        raw_stat = parts[-1].split('(')[-1].split(')')[0]
-                        # Clean out 'lbs' and 'reps' words if they exist, then split by 'x'
-                        clean_stat = raw_stat.replace('lbs', '').replace('reps', '').replace(' ', '')
-                        stats = clean_stat.split('x')
-                        
-                        # Logic to handle different log formats
-                        if len(stats) >= 2:
-                            # If it's 3 parts (3x150x12), take the last two. 
-                            # If it's 2 parts (150x12), take both.
-                            weight_val = stats[-2]
-                            reps_val = stats[-1]
-                            display_stat = f"{weight_val} lbs x {reps_val} reps"
-                            st.sidebar.markdown(f"🟢 **Last time:** `{display_stat}`")
-            except Exception as e:
-                # This ensures the app never crashes; it just won't show the info if the data is weird
-                st.sidebar.caption("History format mismatch.")
-
-        # --- UPDATED INPUTS WITH SETS ---
-        col_s, col_w, col_r = st.sidebar.columns(3) # Split into 3 small columns
-        with col_s:
-            sets = st.number_input("Sets", min_value=1, step=1, value=3)
-        with col_w:
-            lbs = st.number_input("Lbs", min_value=0, step=5)
-        with col_r:
-            reps = st.number_input("Reps", min_value=0, step=1)
-        
-        if st.sidebar.button("➕ Add Exercise to List", use_container_width=True):
-            # Format now includes sets: "Exercise (Sets x Lbs x Reps)"
-            st.session_state["current_workout_list"].append(f"{ex} ({sets}x{lbs}x{reps})")
-            st.toast(f"Added {ex}!")
-
-        if st.session_state["current_workout_list"]:
-            st.sidebar.write("**Current Session Stack:**")
-            for item in st.session_state["current_workout_list"]:
-                st.sidebar.caption(f"• {item}")
-            if st.sidebar.button("🗑️ Clear List", use_container_width=True):
-                st.session_state["current_workout_list"] = []
-                st.rerun()
-
-            st.sidebar.markdown("---")
-            if st.sidebar.button("💾 SAVE ENTIRE WORKOUT", type="primary", use_container_width=True):
-                if st.session_state["current_workout_list"]:
-                    all_details = " | ".join(st.session_state["current_workout_list"])
-                    save_triggered = True
-                else:
-                    st.sidebar.error("Workout list is empty!")
-                
-    elif activity == "Cardio":
-        mins = st.sidebar.number_input("Duration (minutes)", min_value=0, step=5)
-        if st.sidebar.button("Log Cardio Session", use_container_width=True):
-            all_details = f"{mins} min walk"
-            save_triggered = True
-        
-    else: 
-        stretch_focus = st.sidebar.selectbox("Select Mobility", ["Full Body Flow", "Lower Back & Hips", "Chest & Lat Opening", "Hamstring & Glute", "Custom"])
-        if st.sidebar.button("Log Mobility Session", use_container_width=True):
-            all_details = f"Mobility: {stretch_focus}"
-            save_triggered = True
-
-    # --- MASTER SAVE LOGIC ---
-    if save_triggered:
-        new_row = pd.DataFrame([[user, str(date), activity, weight, all_details]], columns=["User", "Date", "Activity", "Body Weight", "Details"])
-        updated_df = pd.concat([log_df, new_row], ignore_index=True)
-        conn.update(data=updated_df)
-        st.cache_data.clear() 
-        st.session_state["current_workout_list"] = []
-        st.toast("Saved to Google Sheets!")
-        st.rerun()
-
-    # --- 6. MAIN DASHBOARD TABS ---
-    tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
-
-    with tab1:
-        # --- SECTION A: WEIGHT JOURNEY ---
-        user_df = log_df[(log_df["User"] == user) & (log_df["Body Weight"] > 0)] if not log_df.empty else pd.DataFrame()
-        if not user_df.empty:
-            st.subheader(f"⚖️ {user}'s Weight Journey")
-            st.line_chart(user_df.set_index("Date")["Body Weight"])
-        
-        st.divider()
-
-        # --- SECTION B: STRENGTH DASHBOARD ---
-        st.subheader("🚀 Strength Dashboard")
-        if not log_df.empty:
-            lift_data = log_df[(log_df["User"] == user) & (log_df["Activity"] == "Full Body Circuit")]
-
-            # --- GARMIN METRICS DISPLAY ---
-        st.markdown("### ⌚ Today's Garmin Vitals")
-        g_col1, g_col2, g_col3 = st.columns(3)
-        g_col1.metric("Steps", daily_metrics["Steps"])
-        g_col2.metric("Resting Heart Rate", f"{daily_metrics['RHR']} bpm")
-        g_col3.metric("Peak Body Battery", daily_metrics["Body Battery"])
-        st.markdown("---")
-            
-            if not lift_data.empty:
-                # 1. HELPER FUNCTION TO GET DATA
-                def get_lift_df(exercise_name):
-                    records = []
-                    for _, row in lift_data.iterrows():
-                        if exercise_name in row["Details"]:
-                            try:
-                                parts = [p.strip() for p in row["Details"].split("|") if exercise_name in p]
-                                for p in parts:
-                                    raw_stat = p.split('(')[-1].split(')')[0]
-                                    stats = raw_stat.replace(' ', '').split('x')
-                                    if len(stats) == 3:
-                                        w, r = float(stats[1]), float(stats[2])
-                                        est_1rm = w * (36 / (37 - r)) if r < 37 else w
-                                        records.append({"Date": row["Date"], "Weight": w, "Est_1RM": round(est_1rm, 1)})
-                            except: continue
-                    return pd.DataFrame(records).set_index("Date") if records else pd.DataFrame()
-
-                # 2. THE BIG THREE (Side-by-Side or Stacked on Mobile)
-                st.markdown("### The Big Three")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.caption("Smith Machine Squats")
-                    df_squat = get_lift_df("Smith Machine Squats")
-                    if not df_squat.empty: st.line_chart(df_squat["Est_1RM"])
-                    else: st.info("No squat data.")
-
-                with col2:
-                    st.caption("Smith Machine Bench Press")
-                    df_bench = get_lift_df("Smith Machine Bench Press")
-                    if not df_bench.empty: st.line_chart(df_bench["Est_1RM"])
-                    else: st.info("No bench data.")
-
-                st.markdown("---")
-                
-                # 3. OTHER LIFTS SELECTOR
-                st.markdown("### Specialized Tracking")
-                other_ex = st.selectbox("Select other exercise", ["Cable Lat Pulldowns", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
-                df_other = get_lift_df(other_ex)
-                if not df_other.empty:
-                    st.line_chart(df_other[["Weight", "Est_1RM"]])
-                else:
-                    st.info(f"No data for {other_ex}")
-
-            else:
-                st.info("Log some 'Full Body Circuit' sessions to see your strength charts!")
-
-    with tab2:
-        st.subheader(f"{user}'s Training History")
-        if not log_df.empty:
-            # Filter history to only show 'Only Me'
-            user_history_df = log_df[log_df["User"] == user].sort_values(by="Date", ascending=False)
-            
-            if not user_history_df.empty:
-                edited_df = st.data_editor(user_history_df, num_rows="dynamic", use_container_width=True, disabled=["User", "Date", "Activity", "Body Weight", "Details"], key="log_editor")
-                
-                if len(edited_df) < len(user_history_df):
-                    if st.button("🔴 Confirm Deletion and Update Sheet", type="primary", use_container_width=True):
-                        other_users_df = log_df[log_df["User"] != user]
-                        final_df = pd.concat([other_users_df, edited_df], ignore_index=True)
-                        conn.update(data=final_df)
-                        st.cache_data.clear()
-                        st.success("Google Sheet Updated!")
-                        st.rerun()
-            else:
-                st.info("No history found for this user.")
-
-    with tab3:
-        st.subheader("Home Gym Reference Library")
-        st.markdown("## 🏋️ Workout Exercises")
-        col_ex1, col_ex2 = st.columns(2)
-        with col_ex1:
-            st.markdown("### **Lower Body**")
-            st.write("**Smith Machine Squats:** Sit 'back' into hips, chest up.")
-            st.write("**Smith Machine RDLs:** Hinge at hips, bar to mid-shin, squeeze glutes.")
-        with col_ex2:
-            st.markdown("### **Upper Body**")
-            st.write("**Smith Machine Bench Press:** Control descent, explode upward.")
-            st.write("**Cable Lat Pulldowns:** Drive elbows down, squeeze shoulder blades.")
-            st.write("**Cable Rows:** Pull toward navel, squeeze shoulder blades.")
-        
-        st.write("---")
-        st.markdown("## 🧘 Recovery Protocols")
-        st.markdown("### **1. Frame Lat Stretch (30s)**")
-        st.write("Grab upright, hinge at hips, head between shoulders.")
-        st.markdown("### **2. Doorway Chest Fly Stretch (30s)**")
-        st.write("Forearms on pillars at 90 deg, step forward to open chest.")
-        st.markdown("### **3. Deep Kneeling Hip Flexor Stretch (30s/side)**")
-        st.write("Half-kneeling, squeeze glute, push hips forward.")
-        st.markdown("### **4. Spinal Decompression (45-60s)**")
-        st.write("Child's Pose: Kneel, sit on heels, reach forward.")
+        ex = st.sidebar.selectbox("Choose Exercise", ["Smith Machine Squats", "Cable Lat Pulldowns", "Smith Machine Bench Press", "Cable Rows", "Cable Woodchoppers", "Smith Machine R
