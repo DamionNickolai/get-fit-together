@@ -76,30 +76,34 @@ st.set_page_config(
         st.sidebar.subheader("Add Exercises")
         ex = st.sidebar.selectbox("Choose Exercise", ["Smith Machine Squats", "Cable Lat Pulldowns", "Smith Machine Bench Press", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
         
-        # --- ENHANCED MEMORY LOGIC: SIMPLIFIED OUTPUT ---
+        # --- UNIVERSAL MEMORY LOGIC (Fixes the Index Error) ---
         if not log_df.empty:
             try:
                 has_details = log_df['Details'].notna()
                 past_sets = log_df[(log_df["User"] == user) & (has_details) & (log_df["Details"].str.contains(ex, case=False, na=False))]
+                
                 if not past_sets.empty:
                     last_entry = str(past_sets.iloc[-1]["Details"])
                     parts = [p.strip() for p in last_entry.split("|") if ex.lower() in p.lower()]
+                    
                     if parts:
-                        # Extracting just the numbers inside the parentheses
-                        # e.g., "Squats (3x150x12)" -> "150x12"
+                        # Extract the stuff inside the ()
                         raw_stat = parts[-1].split('(')[-1].split(')')[0]
-                        stats = raw_stat.split('x')
+                        # Clean out 'lbs' and 'reps' words if they exist, then split by 'x'
+                        clean_stat = raw_stat.replace('lbs', '').replace('reps', '').replace(' ', '')
+                        stats = clean_stat.split('x')
                         
-                        # If it's the new 3-part format (Sets x Lbs x Reps), take the last two
-                        if len(stats) == 3:
-                            display_stat = f"{stats[1]} lbs x {stats[2]} reps"
-                        else:
-                            # Fallback for your older 2-part logs
-                            display_stat = raw_stat.replace('lbs', '').replace('x', ' lbs x ') + " reps"
-                            
-                        st.sidebar.markdown(f"🟢 **Last time:** `{display_stat}`")
-            except:
-                st.sidebar.caption("History currently unavailable.")
+                        # Logic to handle different log formats
+                        if len(stats) >= 2:
+                            # If it's 3 parts (3x150x12), take the last two. 
+                            # If it's 2 parts (150x12), take both.
+                            weight_val = stats[-2]
+                            reps_val = stats[-1]
+                            display_stat = f"{weight_val} lbs x {reps_val} reps"
+                            st.sidebar.markdown(f"🟢 **Last time:** `{display_stat}`")
+            except Exception as e:
+                # This ensures the app never crashes; it just won't show the info if the data is weird
+                st.sidebar.caption("History format mismatch.")
 
         # --- UPDATED INPUTS WITH SETS ---
         col_s, col_w, col_r = st.sidebar.columns(3) # Split into 3 small columns
