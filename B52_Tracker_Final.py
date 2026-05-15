@@ -28,32 +28,21 @@ if check_password():
     # --- 3. MULTI-USER & COLOR THEMING ---
     user = st.radio("Who is training today?", ["Jason", "Angelle"], horizontal=True)
     page_bg_color = "#1E3A8A" if user == "Jason" else "#0D9488"
-    # Set sidebar color based on user
     side_bg = "#162A61" if user == "Jason" else "#0A6E65"
 
     st.markdown(f"""
         <style>
-        .stApp {{
-            background-color: {page_bg_color};
-            color: white;
-        }}
-        /* This makes the sidebar solid on mobile so nothing bleeds through */
-        [data-testid="stSidebar"] {{
-            background-color: {side_bg} !important;
-            opacity: 1 !important;
-        }}
-        .stTabs [data-baseweb="tab"] {{
-            color: white !important;
-        }}
+        .stApp {{ background-color: {page_bg_color}; color: white; }}
+        [data-testid="stSidebar"] {{ background-color: {side_bg} !important; opacity: 1 !important; }}
+        .stTabs [data-baseweb="tab"] {{ color: white !important; }}
         </style>
         """, unsafe_allow_html=True)
+    
     st.title(f"💪 Get Fit Together: {user}'s Session")
 
-    # --- 4. CONNECT TO GOOGLE SHEETS (WITH CACHING TO REDUCE LAG) ---
+    # --- 4. CONNECT TO GOOGLE SHEETS ---
     conn = st.connection("gsheets", type=GSheetsConnection)
 
-    # We use ttl=600 (10 minutes) so it doesn't fetch on every single click, reducing lag.
-    # We will use st.cache_data.clear() on save to force a fresh pull.
     try:
         log_df = conn.read(ttl=600)
         if not log_df.empty:
@@ -64,11 +53,9 @@ if check_password():
     if "current_workout_list" not in st.session_state:
         st.session_state["current_workout_list"] = []
 
-# --- 5. LOGGING SIDEBAR ---
+    # --- 5. LOGGING SIDEBAR ---
     st.sidebar.header(f"Log Details for {user}")
     date = st.sidebar.date_input("Date", datetime.date.today())
-    
-    # 1. Removed "Rest" from this list
     activity = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "Cardio", "Yoga/Mobility", "Body Weight"])
 
     weight = 0.0 
@@ -84,6 +71,20 @@ if check_password():
     elif activity == "Full Body Circuit":
         st.sidebar.subheader("Add Exercises")
         ex = st.sidebar.selectbox("Choose Exercise", ["Smith Machine Squats", "Cable Lat Pulldowns", "Smith Machine Bench Press", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
+        
+        # --- MEMORY LOGIC: SHOW LAST LIFT ---
+        if not log_df.empty:
+            try:
+                has_details = log_df['Details'].notna()
+                past_sets = log_df[(log_df["User"] == user) & (has_details) & (log_df["Details"].str.contains(ex, case=False, na=False))]
+                if not past_sets.empty:
+                    last_entry = str(past_sets.iloc[-1]["Details"])
+                    parts = [p.strip() for p in last_entry.split("|") if ex.lower() in p.lower()]
+                    if parts:
+                        st.sidebar.info(f"💡 Last time: {parts[-1]}")
+            except:
+                st.sidebar.caption("History currently unavailable.")
+
         lbs = st.sidebar.number_input("Max Weight (lbs)", min_value=0, step=5)
         reps = st.sidebar.number_input("Reps", min_value=0, step=1)
         
@@ -113,7 +114,6 @@ if check_password():
             all_details = f"{mins} min walk"
             save_triggered = True
         
-    # 2. Changed this from 'elif' to 'else' since it's the last option now
     else: 
         stretch_focus = st.sidebar.selectbox("Select Mobility", ["Full Body Flow", "Lower Back & Hips", "Chest & Lat Opening", "Hamstring & Glute", "Custom"])
         if st.sidebar.button("Log Mobility Session", use_container_width=True):
@@ -125,7 +125,7 @@ if check_password():
         new_row = pd.DataFrame([[user, str(date), activity, weight, all_details]], columns=["User", "Date", "Activity", "Body Weight", "Details"])
         updated_df = pd.concat([log_df, new_row], ignore_index=True)
         conn.update(data=updated_df)
-        st.cache_data.clear() # Clears the cache so the Progress tab updates immediately
+        st.cache_data.clear() 
         st.session_state["current_workout_list"] = []
         st.toast("Saved to Google Sheets!")
         st.rerun()
@@ -134,34 +134,25 @@ if check_password():
     tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
 
     with tab1:
-        # We only want to chart rows where a weight was actually recorded
+        # Only showing weight charts for the active user
         user_df = log_df[(log_df["User"] == user) & (log_df["Body Weight"] > 0)] if not log_df.empty else pd.DataFrame()
         if not user_df.empty:
             st.subheader(f"{user}'s Weight Journey")
             st.line_chart(user_df.set_index("Date")["Body Weight"])
         else:
-            st.info("No weight data logged yet. Use 'Body Weight' session type to start your chart.")
+            st.info("No weight data logged yet.")
 
     with tab2:
         st.subheader(f"{user}'s Training History")
-        
-        # Filter for only the current user's data
         if not log_df.empty:
+            # Filter history to only show 'Only Me'
             user_history_df = log_df[log_df["User"] == user].sort_values(by="Date", ascending=False)
             
             if not user_history_df.empty:
-                edited_df = st.data_editor(
-                    user_history_df, 
-                    num_rows="dynamic", 
-                    use_container_width=True, 
-                    disabled=["User", "Date", "Activity", "Body Weight", "Details"], 
-                    key="log_editor"
-                )
+                edited_df = st.data_editor(user_history_df, num_rows="dynamic", use_container_width=True, disabled=["User", "Date", "Activity", "Body Weight", "Details"], key="log_editor")
                 
-                # Deletion logic (Note: This still works perfectly)
                 if len(edited_df) < len(user_history_df):
                     if st.button("🔴 Confirm Deletion and Update Sheet", type="primary", use_container_width=True):
-                        # We merge the changes back into the main log_df before saving
                         other_users_df = log_df[log_df["User"] != user]
                         final_df = pd.concat([other_users_df, edited_df], ignore_index=True)
                         conn.update(data=final_df)
@@ -169,7 +160,7 @@ if check_password():
                         st.success("Google Sheet Updated!")
                         st.rerun()
             else:
-                st.info(f"No history found for {user} yet. Let's get to work!")
+                st.info("No history found for this user.")
 
     with tab3:
         st.subheader("Home Gym Reference Library")
