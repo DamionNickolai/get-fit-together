@@ -59,7 +59,7 @@ if check_password():
 
     if activity == "Body Weight":
         weight = st.sidebar.number_input("Current Weight (lbs)", min_value=0.0, step=0.1)
-        if st.sidebar.button("Log Weight Only"):
+        if st.sidebar.button("Log Weight Only", use_container_width=True):
             all_details = f"Weight Entry: {weight} lbs"
             save_triggered = True
 
@@ -69,7 +69,7 @@ if check_password():
         lbs = st.sidebar.number_input("Max Weight (lbs)", min_value=0, step=5)
         reps = st.sidebar.number_input("Reps", min_value=0, step=1)
         
-        if st.sidebar.button("➕ Add Exercise to List"):
+        if st.sidebar.button("➕ Add Exercise to List", use_container_width=True):
             st.session_state["current_workout_list"].append(f"{ex} ({lbs} lbs x {reps})")
             st.toast(f"Added {ex}!")
 
@@ -77,12 +77,12 @@ if check_password():
             st.sidebar.write("**Current Session Stack:**")
             for item in st.session_state["current_workout_list"]:
                 st.sidebar.caption(f"• {item}")
-            if st.sidebar.button("🗑️ Clear List"):
+            if st.sidebar.button("🗑️ Clear List", use_container_width=True):
                 st.session_state["current_workout_list"] = []
                 st.rerun()
 
             st.sidebar.markdown("---")
-            if st.sidebar.button("💾 SAVE ENTIRE WORKOUT", type="primary"):
+            if st.sidebar.button("💾 SAVE ENTIRE WORKOUT", type="primary", use_container_width=True):
                 if st.session_state["current_workout_list"]:
                     all_details = " | ".join(st.session_state["current_workout_list"])
                     save_triggered = True
@@ -91,14 +91,14 @@ if check_password():
                 
     elif activity == "LISS Cardio":
         mins = st.sidebar.number_input("Duration (minutes)", min_value=0, step=5)
-        if st.sidebar.button("Log Cardio Session"):
+        if st.sidebar.button("Log Cardio Session", use_container_width=True):
             all_details = f"{mins} min walk"
             save_triggered = True
         
     # 2. Changed this from 'elif' to 'else' since it's the last option now
     else: 
         stretch_focus = st.sidebar.selectbox("Select Mobility", ["Full Body Flow", "Lower Back & Hips", "Chest & Lat Opening", "Hamstring & Glute", "Custom"])
-        if st.sidebar.button("Log Mobility Session"):
+        if st.sidebar.button("Log Mobility Session", use_container_width=True):
             all_details = f"Mobility: {stretch_focus}"
             save_triggered = True
 
