@@ -54,9 +54,12 @@ if check_password():
     # --- 4. DATABASE INITIALIZATION ---
     FILE_NAME = "family_workout_log.csv"
     if not os.path.exists(FILE_NAME):
-        # Kept the structure clean, tracking the details of whatever workout or stretch is chosen
         df = pd.DataFrame(columns=["User", "Date", "Activity", "Body Weight", "Details"])
         df.to_csv(FILE_NAME, index=False)
+
+    # Initialize a temporary session state memory bucket for the active workout
+    if "current_workout_list" not in st.session_state:
+        st.session_state["current_workout_list"] = []
 
     # --- 5. LOGGING SIDEBAR ---
     st.sidebar.header(f"Log Details for {user}")
@@ -65,23 +68,57 @@ if check_password():
     weight = st.sidebar.number_input("Body Weight (lbs)", min_value=0.0, step=0.1)
 
     # Dynamic Input Elements Based on Session Type
-    details = ""
     if activity == "B-52 Full Body":
-        ex = st.sidebar.selectbox("Top Exercise Performed", [
+        st.sidebar.subheader("Add Exercises to Session")
+        ex = st.sidebar.selectbox("Choose Exercise", [
             "Smith Machine Squats", "Cable Lat Pulldowns", 
             "Smith Machine Bench Press", "Cable Rows", 
             "Cable Woodchoppers", "Smith Machine RDLs"
         ])
         lbs = st.sidebar.number_input("Max Weight (lbs)", min_value=0, step=5)
         reps = st.sidebar.number_input("Reps", min_value=0, step=1)
-        details = f"{ex}: {lbs} lbs x {reps}"
         
+        # Button to append this specific lift to the temporary round table list
+        if st.sidebar.button("➕ Add Exercise to List"):
+            st.session_state["current_workout_list"].append(f"{ex} ({lbs} lbs x {reps})")
+            st.sidebar.toast(f"Added {ex}!")
+
+        # Display current active items waiting to be recorded
+        if st.session_state["current_workout_list"]:
+            st.sidebar.write("**Current Session Stack:**")
+            for item in st.session_state["current_workout_list"]:
+                st.sidebar.caption(f"• {item}")
+            
+            if st.sidebar.button("🗑️ Clear List"):
+                st.session_state["current_workout_list"] = []
+                st.rerun()
+
+        # The master button that writes everything into one single line row item
+        st.sidebar.markdown("---")
+        if st.sidebar.button("💾 SAVE ENTIRE WORKOUT", type="primary"):
+            if st.session_state["current_workout_list"]:
+                all_details = " | ".join(st.session_state["current_workout_list"])
+                new_entry = pd.DataFrame([[user, date, activity, weight, all_details]], 
+                                         columns=["User", "Date", "Activity", "Body Weight", "Details"])
+                new_entry.to_csv(FILE_NAME, mode='a', header=False, index=False)
+                
+                # Clear memory loop upon tracking complete
+                st.session_state["current_workout_list"] = []
+                st.sidebar.success(f"Entire session saved, {user}!")
+                st.rerun()
+            else:
+                st.sidebar.error("Your workout list is empty! Add exercises first.")
+                
     elif activity == "LISS Cardio":
         mins = st.sidebar.number_input("Duration (minutes)", min_value=0, step=5)
-        details = f"{mins} min walk"
+        if st.sidebar.button("Log Cardio Session"):
+            new_entry = pd.DataFrame([[user, date, activity, weight, f"{mins} min walk"]], 
+                                     columns=["User", "Date", "Activity", "Body Weight", "Details"])
+            new_entry.to_csv(FILE_NAME, mode='a', header=False, index=False)
+            st.sidebar.success("Cardio saved!")
+            st.rerun()
         
     elif activity == "Yoga/Mobility":
-        # New drop-down selection for the specific stretch session completed
         stretch_focus = st.sidebar.selectbox("Select Mobility Routine", [
             "Full Body Flow",
             "Lower Back Decompression & Hips",
@@ -89,17 +126,20 @@ if check_password():
             "Hamstring & Glute Flexibility",
             "Custom/Static Stretching"
         ])
-        details = f"Mobility: {stretch_focus}"
+        if st.sidebar.button("Log Mobility Session"):
+            new_entry = pd.DataFrame([[user, date, activity, weight, f"Mobility: {stretch_focus}"]], 
+                                     columns=["User", "Date", "Activity", "Body Weight", "Details"])
+            new_entry.to_csv(FILE_NAME, mode='a', header=False, index=False)
+            st.sidebar.success("Mobility saved!")
+            st.rerun()
         
     else:
-        details = "Recovery/Rest Day"
-
-    # Save Button
-    if st.sidebar.button("Log Workout Data"):
-        new_entry = pd.DataFrame([[user, date, activity, weight, details]], 
-                                 columns=["User", "Date", "Activity", "Body Weight", "Details"])
-        new_entry.to_csv(FILE_NAME, mode='a', header=False, index=False)
-        st.sidebar.success(f"Session saved successfully, {user}!")
+        if st.sidebar.button("Log Rest Day"):
+            new_entry = pd.DataFrame([[user, date, activity, weight, "Recovery/Rest Day"]], 
+                                     columns=["User", "Date", "Activity", "Body Weight", "Details"])
+            new_entry.to_csv(FILE_NAME, mode='a', header=False, index=False)
+            st.sidebar.success("Rest day logged!")
+            st.rerun()
 
     # --- 6. MAIN DASHBOARD TABS ---
     tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "🧘 Recovery Protocols"])
@@ -114,7 +154,6 @@ if check_password():
             if not weight_df.empty:
                 st.line_chart(weight_df.set_index("Date")["Body Weight"])
             
-            # Simplified Tracking Metrics
             total_sessions = user_df.shape[0]
             mobility_sessions = user_df[user_df["Activity"] == "Yoga/Mobility"].shape[0]
             
