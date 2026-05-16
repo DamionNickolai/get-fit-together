@@ -241,7 +241,7 @@ if check_password():
 
     # --- USER LOGOUT/SWITCH ---
     # Inject invisible breaks to push the button down (adjust the 15 as needed)
-    st.sidebar.markdown("<br>" * 15, unsafe_allow_html=True) 
+    st.sidebar.markdown("<br>" * 8, unsafe_allow_html=True) 
     st.sidebar.markdown("---")
     if st.sidebar.button("🔄 Switch User / Logout", use_container_width=True):
         # Dump the short-term memory (removes the user tag and password)
