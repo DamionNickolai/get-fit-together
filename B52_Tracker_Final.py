@@ -256,6 +256,14 @@ if check_password():
         
         st.divider()
 
+        # --- SECTION B: WEIGHT JOURNEY ---
+        user_df = log_df[(log_df["User"] == user) & (log_df["Body Weight"] > 0)] if not log_df.empty else pd.DataFrame()
+        if not user_df.empty:
+            st.subheader(f"⚖️ {user}'s Weight Journey")
+            st.line_chart(user_df.set_index("Date")["Body Weight"])
+        
+        st.divider()
+        
         # --- SECTION C: STRENGTH DASHBOARD ---
         st.subheader("🚀 Strength Dashboard")
         if not log_df.empty:
