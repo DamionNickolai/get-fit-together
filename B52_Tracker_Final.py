@@ -68,14 +68,24 @@ if check_password():
                 client = Garmin(user_email, user_pass)
                 client.login()
                 today = datetime.date.today().isoformat()
-                stats = client.get_stats(today)
                 
-                steps = stats.get('totalSteps', 0)
-                rhr = stats.get('restingHeartRate', '--')
-                bb_max = stats.get('maxBodyBattery', '--')
-                return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max}
+                # Fetch general stats and specific body battery stats
+                stats = client.get_stats(today)
+                bb_data = client.get_body_battery(today) 
+                
+                # Try to extract the data using standard keys
+                steps = stats.get('totalSteps', 0) if stats else 0
+                rhr = stats.get('restingHeartRate', '--') if stats else '--'
+                
+                # Body battery is tricky; it's often nested
+                bb_max = '--'
+                if isinstance(bb_data, list) and len(bb_data) > 0:
+                    # Sometimes it's a list of dictionaries
+                    bb_max = bb_data[0].get('charged', '--')
+                
+                return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max, "Raw": stats}
             except Exception as e:
-                return {"Steps": "Sync Error", "RHR": "--", "Body Battery": "--"}
+                return {"Steps": "Sync Error", "RHR": "--", "Body Battery": "--", "Raw": str(e)}
 
         # Attempt to pull credentials based on who is training
         if user == "Jason":
@@ -197,7 +207,6 @@ if check_password():
         # --- SECTION A: GARMIN METRICS ---
         st.subheader("⌚ Today's Garmin Vitals")
         
-        # Display helpful debugging errors if Garmin failed
         if garmin_status == "missing_secrets":
             st.error("⚠️ Garmin Secrets are missing. Check your Streamlit Cloud Settings -> Secrets.")
         elif garmin_status == "missing_library":
@@ -209,14 +218,10 @@ if check_password():
         g_col1.metric("Steps", daily_metrics["Steps"])
         g_col2.metric("Resting Heart Rate", f"{daily_metrics['RHR']} bpm")
         g_col3.metric("Peak Body Battery", daily_metrics["Body Battery"])
-        
-        st.divider()
 
-        # --- SECTION B: WEIGHT JOURNEY ---
-        user_df = log_df[(log_df["User"] == user) & (log_df["Body Weight"] > 0)] if not log_df.empty else pd.DataFrame()
-        if not user_df.empty:
-            st.subheader(f"⚖️ {user}'s Weight Journey")
-            st.line_chart(user_df.set_index("Date")["Body Weight"])
+        # THE X-RAY: This will print the raw data Garmin sends us
+        with st.expander("Garmin Debugger - Click to see Raw Data"):
+            st.write(daily_metrics.get("Raw", "No raw data found"))
         
         st.divider()
 
