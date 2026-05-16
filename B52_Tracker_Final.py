@@ -7,8 +7,9 @@ import plotly.express as px
 
 # Must be the very first Streamlit command
 st.set_page_config(
-    page_title="Let's Get Fit", # <-- THIS renaming line fixes the phone app title!
-    layout="wide", 
+    page_title="Our Fitness App",
+    page_icon="💪",
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
