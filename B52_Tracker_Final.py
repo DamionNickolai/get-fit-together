@@ -239,15 +239,20 @@ if check_password():
         st.toast("Saved to Google Sheets!")
         st.rerun()
 
-    # --- USER LOGOUT/SWITCH ---
-    # Inject invisible breaks to push the button down (adjust the 15 as needed)
-    st.sidebar.markdown("<br>" * 8, unsafe_allow_html=True) 
+    # --- USER LOGOUT/SWITCH & DEBUGGER ---
+    # Inject invisible breaks to push everything down to the bottom
+    st.sidebar.markdown("<br>" * 10, unsafe_allow_html=True) 
+    
     st.sidebar.markdown("---")
+    
+    # 1. The Switch User Button First
     if st.sidebar.button("🔄 Switch User / Logout", use_container_width=True):
-        # Dump the short-term memory (removes the user tag and password)
         st.session_state.clear()
-        # Reboot the app to the front door
         st.rerun()
+        
+    # 2. The Hidden Debugger Tucked Below It
+    with st.sidebar.expander("🛠️ Garmin Debugger"):
+        st.write(daily_metrics.get("Raw", "No raw data found"))
     
     # --- 6. MAIN DASHBOARD TABS ---
     tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
@@ -267,11 +272,7 @@ if check_password():
         g_col1.metric("Steps", daily_metrics["Steps"])
         g_col2.metric("Resting Heart Rate", f"{daily_metrics['RHR']} bpm")
         g_col3.metric("Peak Body Battery", daily_metrics["Body Battery"])
-
-        # THE X-RAY: This will print the raw data Garmin sends us
-        with st.expander("Garmin Debugger - Click to see Raw Data"):
-            st.write(daily_metrics.get("Raw", "No raw data found"))
-        
+       
         st.divider()
 
         # --- SECTION B: WEIGHT JOURNEY (PLOTLY UPGRADE) ---
