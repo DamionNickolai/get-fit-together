@@ -239,6 +239,14 @@ if check_password():
         st.toast("Saved to Google Sheets!")
         st.rerun()
 
+    # --- USER LOGOUT/SWITCH ---
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔄 Switch User / Logout", use_container_width=True):
+        # Dump the short-term memory (removes the user tag and password)
+        st.session_state.clear()
+        # Reboot the app to the front door
+        st.rerun()
+    
     # --- 6. MAIN DASHBOARD TABS ---
     tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
 
