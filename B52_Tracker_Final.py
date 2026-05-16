@@ -61,6 +61,7 @@ if check_password():
     # --- 4.5 GARMIN INTEGRATION (SAFEGUARDED) ---
     try:
         from garminconnect import Garmin
+        import datetime
         
         @st.cache_data(ttl=3600, show_spinner=False)
         def get_garmin_metrics(user_email, user_pass):
@@ -69,14 +70,20 @@ if check_password():
                 client.login()
                 today = datetime.date.today().isoformat()
                 
-                # Ask Garmin for the data buckets
+                # Ask Garmin for the main data bucket
                 stats = client.get_stats(today) or {}
                 
-                # 1. STEPS: Grab it, and force it to be a number (fallback to 0 if Garmin sends 'None')
+                # Ask Garmin for the specific steps bucket (just in case)
+                try:
+                    steps_data = client.get_steps_data(today)
+                except:
+                    steps_data = "Endpoint unavailable"
+                
+                # 1. STEPS
                 raw_steps = stats.get('totalSteps')
                 steps = f"{int(raw_steps):,}" if raw_steps else "0"
                 
-                # 2. RESTING HEART RATE: Sometimes it's in stats, sometimes it needs its own call
+                # 2. RESTING HEART RATE
                 raw_rhr = stats.get('restingHeartRate')
                 if not raw_rhr:
                     try:
@@ -85,22 +92,27 @@ if check_password():
                     except: pass
                 rhr = int(raw_rhr) if raw_rhr else "--"
                 
-                # 3. BODY BATTERY: This requires a dedicated endpoint
+                # 3. BODY BATTERY
                 bb_max = "--"
                 try:
                     bb_data = client.get_body_battery(today)
                     if bb_data and isinstance(bb_data, list) and len(bb_data) > 0:
-                        # Garmin usually stores the day's peak in 'charged' or similar keys
                         bb_max = bb_data[0].get('charged') or bb_data[0].get('highestBodyBatteryValue') or "--"
                 except: pass
 
-                return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max}
+                # Package the raw data for the debugger
+                debug_info = {
+                    "Main_Stats": stats,
+                    "Steps_Endpoint": steps_data
+                }
+
+                return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max, "Raw": str(debug_info)}
                 
             except Exception as e:
-                # If everything completely fails
-                return {"Steps": "Sync Error", "RHR": "--", "Body Battery": "--"}
+                # If the login fails or servers reject us, catch the exact error
+                return {"Steps": "0", "RHR": "--", "Body Battery": "--", "Raw": f"Garmin Server Crash: {str(e)}"}
 
-        # Attempt to pull credentials based on who is training
+        # Attempt to pull credentials
         if user == "Jason":
             g_email = st.secrets["garmin"]["jason_email"]
             g_pass = st.secrets["garmin"]["jason_pass"]
@@ -111,15 +123,15 @@ if check_password():
         daily_metrics = get_garmin_metrics(g_email, g_pass)
         garmin_status = "active"
 
-    except KeyError:
+    except KeyError as e:
         garmin_status = "missing_secrets"
-        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--"}
-    except ImportError:
+        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--", "Raw": f"Missing Secret Key: {str(e)}"}
+    except ImportError as e:
         garmin_status = "missing_library"
-        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--"}
+        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--", "Raw": f"Missing Library: {str(e)}"}
     except Exception as e:
         garmin_status = "unknown_error"
-        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--"}
+        daily_metrics = {"Steps": "0", "RHR": "--", "Body Battery": "--", "Raw": f"Outer Error: {str(e)}"}
     
     # --- 5. LOGGING SIDEBAR ---
     st.sidebar.header(f"Log Details for {user}")
