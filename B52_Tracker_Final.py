@@ -33,9 +33,22 @@ def check_password():
         if login_clicked or (entered_pass and st.session_state.get("last_pass") != entered_pass):
             st.session_state["last_pass"] = entered_pass # track to prevent double-firing
             
-            if entered_pass in st.secrets["passwords"]:
+            credentials = st.secrets["passwords"]
+            
+            if entered_pass == credentials.get("jason"):
                 st.session_state["password_correct"] = True
-                st.session_state["logged_in_user"] = st.secrets["passwords"][entered_pass]
+                st.session_state["logged_in_user"] = "Jason"
+                st.session_state["user_role"] = "user"
+                st.rerun()
+            elif entered_pass == credentials.get("angelle"):
+                st.session_state["password_correct"] = True
+                st.session_state["logged_in_user"] = "Angelle"
+                st.session_state["user_role"] = "user"
+                st.rerun()
+            elif entered_pass == credentials.get("dev_mode"):
+                st.session_state["password_correct"] = True
+                st.session_state["logged_in_user"] = "Jason"  # Default dev view to Jason
+                st.session_state["user_role"] = "developer"   # Master flag for sandbox database
                 st.rerun()
             elif entered_pass:
                 st.error("😕 Password incorrect")
@@ -46,9 +59,10 @@ def check_password():
 
 if check_password():
     # --- 3. MULTI-USER & COLOR THEMING ---
-    # NO MORE RADIO BUTTON! We pull the user directly from memory.
     user = st.session_state["logged_in_user"]
+    role = st.session_state.get("user_role", "user")
     
+    # Define theme colors based on the user session
     page_bg_color = "#1E3A8A" if user == "Jason" else "#0D9488"
     side_bg = "#162A61" if user == "Jason" else "#0A6E65"
 
@@ -60,10 +74,18 @@ if check_password():
         </style>
         """, unsafe_allow_html=True)
     
-    st.title(f"💪 Get Fit Together: {user}'s Session")
+    # Giant warning banner if logged into the Dev database environment
+    if role == "developer":
+        st.warning("🚧 DEV MODE ACTIVE: Connected to Workout Logs - DEV Sandbox")
+        st.title(f"💪 Sandbox Environment: {user}'s Test Session")
+    else:
+        st.title(f"💪 Get Fit Together: {user}'s Session")
 
-    # --- 4. CONNECT TO GOOGLE SHEETS ---
-    conn = st.connection("gsheets", type=GSheetsConnection)
+    # --- 4. DUAL-ENVIRONMENT GOOGLE SHEETS ROUTER ---
+    if role == "developer":
+        conn = st.connection("gsheets_dev", type=GSheetsConnection)
+    else:
+        conn = st.connection("gsheets_prod", type=GSheetsConnection)
 
     try:
         log_df = conn.read(ttl=600)
@@ -75,7 +97,7 @@ if check_password():
     if "current_workout_list" not in st.session_state:
         st.session_state["current_workout_list"] = []
 
-    # --- 4.5 GARMIN INTEGRATION (SAFEGUARDED) ---
+    # --- 4.5 GARMIN INTEGRATION (SAFEGUARDED & ENVIRONMENT AWARE) ---
     try:
         from garminconnect import Garmin
         import datetime
@@ -90,24 +112,19 @@ if check_password():
                 client = Garmin(user_email, user_pass)
                 client.login()
                 
-                # Lock the clock to Central Time so the server doesn't pull "tomorrow's" data at night
                 tz = ZoneInfo("America/Chicago")
                 today = datetime.datetime.now(tz).date().isoformat()
                 
-                # Ask Garmin for the main data bucket
                 stats = client.get_stats(today) or {}
                 
-                # Ask Garmin for the specific steps bucket
                 try:
                     steps_data = client.get_steps_data(today)
                 except:
                     steps_data = "Endpoint unavailable"
                 
-                # 1. STEPS
                 raw_steps = stats.get('totalSteps')
                 steps = f"{int(raw_steps):,}" if raw_steps else "0"
                 
-                # 2. RESTING HEART RATE
                 raw_rhr = stats.get('restingHeartRate')
                 if not raw_rhr:
                     try:
@@ -116,7 +133,6 @@ if check_password():
                     except: pass
                 rhr = int(raw_rhr) if raw_rhr else "--"
                 
-                # 3. BODY BATTERY
                 bb_max = "--"
                 try:
                     bb_data = client.get_body_battery(today)
@@ -124,7 +140,6 @@ if check_password():
                         bb_max = bb_data[0].get('charged') or bb_data[0].get('highestBodyBatteryValue') or "--"
                 except: pass
 
-                # Package the raw data for the debugger
                 debug_info = {
                     "Date_Queried": today,
                     "Main_Stats": stats
@@ -135,7 +150,9 @@ if check_password():
             except Exception as e:
                 return {"Steps": "0", "RHR": "--", "Body Battery": "--", "Raw": f"Garmin Server Error: {str(e)}"}
 
-        # Attempt to pull credentials dynamically from the correct environment block
+        # Route Garmin API parameters dynamically based on role and active profile
+        garmin_section = "garmin_dev" if role == "developer" else "garmin_prod"
+        
         if user == "Jason":
             g_email = st.secrets[garmin_section]["jason_email"]
             g_pass = st.secrets[garmin_section]["jason_pass"]
@@ -158,6 +175,15 @@ if check_password():
     
     # --- 5. LOGGING SIDEBAR ---
     st.sidebar.header(f"Log Details for {user}")
+    
+    # Sandbox profile switcher toggle (Only appears to you if logged in via dev_mode)
+    if role == "developer":
+        st.sidebar.subheader("⚙️ Sandbox Controls")
+        sim_user = st.sidebar.radio("Simulate User Profile:", ["Jason", "Angelle"])
+        if sim_user != st.session_state["logged_in_user"]:
+            st.session_state["logged_in_user"] = sim_user
+            st.rerun()
+
     date = st.sidebar.date_input("Date", datetime.date.today())
     activity = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "Cardio", "Yoga/Mobility", "Body Weight"])
 
@@ -245,21 +271,17 @@ if check_password():
         conn.update(data=updated_df)
         st.cache_data.clear() 
         st.session_state["current_workout_list"] = []
-        st.toast("Saved to Google Sheets!")
+        st.toast("Saved Successfully!")
         st.rerun()
 
     # --- USER LOGOUT/SWITCH & DEBUGGER ---
-    # Inject invisible breaks to push everything down to the bottom
     st.sidebar.markdown("<br>" * 10, unsafe_allow_html=True) 
-    
     st.sidebar.markdown("---")
     
-    # 1. The Switch User Button First
     if st.sidebar.button("🔄 Switch User / Logout", use_container_width=True):
         st.session_state.clear()
         st.rerun()
         
-    # 2. The Hidden Debugger Tucked Below It
     with st.sidebar.expander("🛠️ Garmin Debugger"):
         st.write(daily_metrics.get("Raw", "No raw data found"))
     
@@ -267,7 +289,6 @@ if check_password():
     tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
 
     with tab1:
-        # --- SECTION A: GARMIN METRICS ---
         st.subheader("⌚ Today's Garmin Vitals")
         
         if garmin_status == "missing_secrets":
@@ -284,11 +305,10 @@ if check_password():
        
         st.divider()
 
-        # --- SECTION B: WEIGHT JOURNEY (PLOTLY UPGRADE) ---
+        # --- SECTION B: WEIGHT JOURNEY ---
         user_df = log_df[(log_df["User"] == user) & (log_df["Body Weight"] > 0)] if not log_df.empty else pd.DataFrame()
         if not user_df.empty:
             st.subheader(f"⚖️ {user}'s Weight Journey")
-            # Create interactive line chart
             fig_weight = px.line(user_df, x="Date", y="Body Weight", markers=True, text="Body Weight")
             fig_weight.update_traces(textposition="top center", line_color="#34D399") 
             fig_weight.update_layout(
@@ -303,7 +323,7 @@ if check_password():
         
         st.divider()
 
-        # --- SECTION C: STRENGTH DASHBOARD (HYBRID UPGRADE) ---
+        # --- SECTION C: STRENGTH DASHBOARD ---
         st.subheader("🚀 Strength Dashboard")
         if not log_df.empty:
             lift_data = log_df[(log_df["User"] == user) & (log_df["Activity"] == "Full Body Circuit")]
@@ -316,7 +336,6 @@ if check_password():
                             try:
                                 parts = [p.strip() for p in row["Details"].split("|") if exercise_name in p]
                                 for p in parts:
-                                    # Extract the (3x150x12) text
                                     raw_stat = p.split('(')[-1].split(')')[0]
                                     stats = raw_stat.replace(' ', '').split('x')
                                     
@@ -325,7 +344,6 @@ if check_password():
                                         est_1rm = w * (36 / (37 - r)) if r < 37 else w
                                         vol = s * w * r
                                         
-                                        # Package it all for the hover tooltip
                                         records.append({
                                             "Date": row["Date"], 
                                             "Est 1RM": round(est_1rm, 1),
@@ -335,13 +353,10 @@ if check_password():
                                             "Volume": vol
                                         })
                             except: continue
-                    # Sort by date so the chart flows left-to-right properly
                     return pd.DataFrame(records).sort_values("Date") if records else pd.DataFrame()
 
-                # Helper function to draw the Plotly chart uniformly
                 def draw_strength_chart(df, title):
                     if not df.empty:
-                        # Chart plots Date vs 1RM, but hover shows EVERYTHING
                         fig = px.line(df, x="Date", y="Est 1RM", markers=True, 
                                       hover_data=["Sets", "Reps", "Weight (lbs)", "Volume"])
                         fig.update_traces(line_color="#60A5FA" if user == "Jason" else "#2DD4BF")
@@ -369,7 +384,6 @@ if check_password():
                     draw_strength_chart(get_lift_df("Smith Machine Bench Press"), "Bench Press")
 
                 st.markdown("---")
-                
                 st.markdown("### Specialized Tracking")
                 other_ex = st.selectbox("Select other exercise", ["Cable Lat Pulldowns", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
                 draw_strength_chart(get_lift_df(other_ex), other_ex)
