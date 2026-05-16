@@ -3,6 +3,7 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
+import plotly.express as px
 
 # Must be the very first Streamlit command
 st.set_page_config(
@@ -256,15 +257,19 @@ if check_password():
         
         st.divider()
 
-        # --- SECTION B: WEIGHT JOURNEY ---
+        # --- SECTION B: WEIGHT JOURNEY (PLOTLY UPGRADE) ---
         user_df = log_df[(log_df["User"] == user) & (log_df["Body Weight"] > 0)] if not log_df.empty else pd.DataFrame()
         if not user_df.empty:
             st.subheader(f"⚖️ {user}'s Weight Journey")
-            st.line_chart(user_df.set_index("Date")["Body Weight"])
+            # Create interactive line chart
+            fig_weight = px.line(user_df, x="Date", y="Body Weight", markers=True, text="Body Weight")
+            fig_weight.update_traces(textposition="top center") # Puts the number right above the dot
+            fig_weight.update_layout(xaxis_title="", yaxis_title="Lbs", margin=dict(l=0, r=0, t=10, b=0))
+            st.plotly_chart(fig_weight, use_container_width=True)
         
         st.divider()
-        
-        # --- SECTION C: STRENGTH DASHBOARD ---
+
+        # --- SECTION C: STRENGTH DASHBOARD (HYBRID UPGRADE) ---
         st.subheader("🚀 Strength Dashboard")
         if not log_df.empty:
             lift_data = log_df[(log_df["User"] == user) & (log_df["Activity"] == "Full Body Circuit")]
@@ -277,39 +282,54 @@ if check_password():
                             try:
                                 parts = [p.strip() for p in row["Details"].split("|") if exercise_name in p]
                                 for p in parts:
+                                    # Extract the (3x150x12) text
                                     raw_stat = p.split('(')[-1].split(')')[0]
                                     stats = raw_stat.replace(' ', '').split('x')
+                                    
                                     if len(stats) == 3:
-                                        w, r = float(stats[1]), float(stats[2])
+                                        s, w, r = float(stats[0]), float(stats[1]), float(stats[2])
                                         est_1rm = w * (36 / (37 - r)) if r < 37 else w
-                                        records.append({"Date": row["Date"], "Weight": w, "Est_1RM": round(est_1rm, 1)})
+                                        vol = s * w * r
+                                        
+                                        # Package it all for the hover tooltip
+                                        records.append({
+                                            "Date": row["Date"], 
+                                            "Est 1RM": round(est_1rm, 1),
+                                            "Weight (lbs)": w,
+                                            "Reps": r,
+                                            "Sets": s, 
+                                            "Volume": vol
+                                        })
                             except: continue
                     return pd.DataFrame(records).set_index("Date") if records else pd.DataFrame()
+
+                # Helper function to draw the Plotly chart uniformly
+                def draw_strength_chart(df, title):
+                    if not df.empty:
+                        # Chart plots Date vs 1RM, but hover shows EVERYTHING
+                        fig = px.line(df, x=df.index, y="Est 1RM", markers=True, 
+                                      hover_data=["Sets", "Reps", "Weight (lbs)", "Volume"])
+                        fig.update_layout(xaxis_title="", yaxis_title="Est. 1RM", margin=dict(l=0, r=0, t=10, b=0))
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info(f"No data for {title}.")
 
                 st.markdown("### The Big Three")
                 col1, col2 = st.columns(2)
                 
                 with col1:
                     st.caption("Smith Machine Squats")
-                    df_squat = get_lift_df("Smith Machine Squats")
-                    if not df_squat.empty: st.line_chart(df_squat["Est_1RM"])
-                    else: st.info("No squat data.")
+                    draw_strength_chart(get_lift_df("Smith Machine Squats"), "Squats")
 
                 with col2:
                     st.caption("Smith Machine Bench Press")
-                    df_bench = get_lift_df("Smith Machine Bench Press")
-                    if not df_bench.empty: st.line_chart(df_bench["Est_1RM"])
-                    else: st.info("No bench data.")
+                    draw_strength_chart(get_lift_df("Smith Machine Bench Press"), "Bench Press")
 
                 st.markdown("---")
                 
                 st.markdown("### Specialized Tracking")
                 other_ex = st.selectbox("Select other exercise", ["Cable Lat Pulldowns", "Cable Rows", "Cable Woodchoppers", "Smith Machine RDLs"])
-                df_other = get_lift_df(other_ex)
-                if not df_other.empty:
-                    st.line_chart(df_other[["Weight", "Est_1RM"]])
-                else:
-                    st.info(f"No data for {other_ex}")
+                draw_strength_chart(get_lift_df(other_ex), other_ex)
 
             else:
                 st.info("Log some 'Full Body Circuit' sessions to see your strength charts!")
