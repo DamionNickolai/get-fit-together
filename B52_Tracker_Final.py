@@ -69,23 +69,36 @@ if check_password():
                 client.login()
                 today = datetime.date.today().isoformat()
                 
-                # Fetch general stats and specific body battery stats
-                stats = client.get_stats(today)
-                bb_data = client.get_body_battery(today) 
+                # Ask Garmin for the data buckets
+                stats = client.get_stats(today) or {}
                 
-                # Try to extract the data using standard keys
-                steps = stats.get('totalSteps', 0) if stats else 0
-                rhr = stats.get('restingHeartRate', '--') if stats else '--'
+                # 1. STEPS: Grab it, and force it to be a number (fallback to 0 if Garmin sends 'None')
+                raw_steps = stats.get('totalSteps')
+                steps = f"{int(raw_steps):,}" if raw_steps else "0"
                 
-                # Body battery is tricky; it's often nested
-                bb_max = '--'
-                if isinstance(bb_data, list) and len(bb_data) > 0:
-                    # Sometimes it's a list of dictionaries
-                    bb_max = bb_data[0].get('charged', '--')
+                # 2. RESTING HEART RATE: Sometimes it's in stats, sometimes it needs its own call
+                raw_rhr = stats.get('restingHeartRate')
+                if not raw_rhr:
+                    try:
+                        rhr_data = client.get_rhr_day(today)
+                        raw_rhr = rhr_data.get('restingHeartRate') if rhr_data else None
+                    except: pass
+                rhr = int(raw_rhr) if raw_rhr else "--"
                 
-                return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max, "Raw": stats}
+                # 3. BODY BATTERY: This requires a dedicated endpoint
+                bb_max = "--"
+                try:
+                    bb_data = client.get_body_battery(today)
+                    if bb_data and isinstance(bb_data, list) and len(bb_data) > 0:
+                        # Garmin usually stores the day's peak in 'charged' or similar keys
+                        bb_max = bb_data[0].get('charged') or bb_data[0].get('highestBodyBatteryValue') or "--"
+                except: pass
+
+                return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max}
+                
             except Exception as e:
-                return {"Steps": "Sync Error", "RHR": "--", "Body Battery": "--", "Raw": str(e)}
+                # If everything completely fails
+                return {"Steps": "Sync Error", "RHR": "--", "Body Battery": "--"}
 
         # Attempt to pull credentials based on who is training
         if user == "Jason":
