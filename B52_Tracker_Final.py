@@ -66,14 +66,21 @@ if check_password():
         @st.cache_data(ttl=3600, show_spinner=False)
         def get_garmin_metrics(user_email, user_pass):
             try:
+                from garminconnect import Garmin
+                from zoneinfo import ZoneInfo
+                import datetime
+                
                 client = Garmin(user_email, user_pass)
                 client.login()
-                today = datetime.date.today().isoformat()
+                
+                # Lock the clock to Central Time so the server doesn't pull "tomorrow's" data at night
+                tz = ZoneInfo("America/Chicago")
+                today = datetime.datetime.now(tz).date().isoformat()
                 
                 # Ask Garmin for the main data bucket
                 stats = client.get_stats(today) or {}
                 
-                # Ask Garmin for the specific steps bucket (just in case)
+                # Ask Garmin for the specific steps bucket
                 try:
                     steps_data = client.get_steps_data(today)
                 except:
@@ -102,15 +109,14 @@ if check_password():
 
                 # Package the raw data for the debugger
                 debug_info = {
-                    "Main_Stats": stats,
-                    "Steps_Endpoint": steps_data
+                    "Date_Queried": today,
+                    "Main_Stats": stats
                 }
 
                 return {"Steps": steps, "RHR": rhr, "Body Battery": bb_max, "Raw": str(debug_info)}
                 
             except Exception as e:
-                # If the login fails or servers reject us, catch the exact error
-                return {"Steps": "0", "RHR": "--", "Body Battery": "--", "Raw": f"Garmin Server Crash: {str(e)}"}
+                return {"Steps": "0", "RHR": "--", "Body Battery": "--", "Raw": f"Garmin Server Error: {str(e)}"}
 
         # Attempt to pull credentials
         if user == "Jason":
