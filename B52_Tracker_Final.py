@@ -281,9 +281,16 @@ if check_password():
             st.subheader(f"⚖️ {user}'s Weight Journey")
             # Create interactive line chart
             fig_weight = px.line(user_df, x="Date", y="Body Weight", markers=True, text="Body Weight")
-            fig_weight.update_traces(textposition="top center") # Puts the number right above the dot
-            fig_weight.update_layout(xaxis_title="", yaxis_title="Lbs", margin=dict(l=0, r=0, t=10, b=0))
-            st.plotly_chart(fig_weight, use_container_width=True)
+            fig_weight.update_traces(textposition="top center", line_color="#34D399") 
+            fig_weight.update_layout(
+                xaxis_title="", 
+                yaxis_title="Lbs", 
+                margin=dict(l=0, r=0, t=20, b=0),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color="white")
+            )
+            st.plotly_chart(fig_weight, use_container_width=True, config={'displayModeBar': False})
         
         st.divider()
 
@@ -319,16 +326,25 @@ if check_password():
                                             "Volume": vol
                                         })
                             except: continue
-                    return pd.DataFrame(records).set_index("Date") if records else pd.DataFrame()
+                    # Sort by date so the chart flows left-to-right properly
+                    return pd.DataFrame(records).sort_values("Date") if records else pd.DataFrame()
 
                 # Helper function to draw the Plotly chart uniformly
                 def draw_strength_chart(df, title):
                     if not df.empty:
                         # Chart plots Date vs 1RM, but hover shows EVERYTHING
-                        fig = px.line(df, x=df.index, y="Est 1RM", markers=True, 
+                        fig = px.line(df, x="Date", y="Est 1RM", markers=True, 
                                       hover_data=["Sets", "Reps", "Weight (lbs)", "Volume"])
-                        fig.update_layout(xaxis_title="", yaxis_title="Est. 1RM", margin=dict(l=0, r=0, t=10, b=0))
-                        st.plotly_chart(fig, use_container_width=True)
+                        fig.update_traces(line_color="#60A5FA" if user == "Jason" else "#2DD4BF")
+                        fig.update_layout(
+                            xaxis_title="", 
+                            yaxis_title="Est. 1RM (lbs)", 
+                            margin=dict(l=0, r=0, t=10, b=0),
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            font=dict(color="white")
+                        )
+                        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                     else:
                         st.info(f"No data for {title}.")
 
