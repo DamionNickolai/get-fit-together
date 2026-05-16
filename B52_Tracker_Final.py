@@ -47,7 +47,7 @@ def check_password():
                 st.rerun()
             elif entered_pass == credentials.get("dev_mode"):
                 st.session_state["password_correct"] = True
-                st.session_state["logged_in_user"] = "Jason"  # Default dev view to you
+                st.session_state["logged_in_user"] = "Jason"  # Default dev view to Jason
                 st.session_state["user_role"] = "developer"   # Master flag for sandbox database
                 st.rerun()
             elif entered_pass:
@@ -155,10 +155,10 @@ if check_password():
         
         if user == "Jason":
             g_email = st.secrets[garmin_section]["jason_email"]
-            g_pass = st.secrets[garmin_section]["jason_password"]
+            g_pass = st.secrets[garmin_section]["jason_pass"]
         else:
             g_email = st.secrets[garmin_section]["angelle_email"]
-            g_pass = st.secrets[garmin_section]["angelle_password"]
+            g_pass = st.secrets[garmin_section]["angelle_pass"]
 
         daily_metrics = get_garmin_metrics(g_email, g_pass)
         garmin_status = "active"
