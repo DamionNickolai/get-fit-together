@@ -135,13 +135,13 @@ if check_password():
             except Exception as e:
                 return {"Steps": "0", "RHR": "--", "Body Battery": "--", "Raw": f"Garmin Server Error: {str(e)}"}
 
-        # Attempt to pull credentials
+        # Attempt to pull credentials dynamically from the correct environment block
         if user == "Jason":
-            g_email = st.secrets["garmin"]["jason_email"]
-            g_pass = st.secrets["garmin"]["jason_pass"]
+            g_email = st.secrets[garmin_section]["jason_email"]
+            g_pass = st.secrets[garmin_section]["jason_pass"]
         else:
-            g_email = st.secrets["garmin"]["angelle_email"]
-            g_pass = st.secrets["garmin"]["angelle_pass"]
+            g_email = st.secrets[garmin_section]["angelle_email"]
+            g_pass = st.secrets[garmin_section]["angelle_pass"]
 
         daily_metrics = get_garmin_metrics(g_email, g_pass)
         garmin_status = "active"
