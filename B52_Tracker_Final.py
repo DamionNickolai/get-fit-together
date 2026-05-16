@@ -12,11 +12,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- 2. PASSWORD PROTECTION SYSTEM ---
+# --- 2. PASSWORD & USER ACCOUNT SYSTEM ---
 def check_password():
     def password_entered():
-        if st.session_state["password"] == st.secrets["password"]:
+        entered_pass = st.session_state["password"]
+        
+        # Check if the password exists in our dictionary of users
+        if entered_pass in st.secrets["passwords"]:
             st.session_state["password_correct"] = True
+            # Save the specific user's name into Streamlit's memory!
+            st.session_state["logged_in_user"] = st.secrets["passwords"][entered_pass]
             del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
@@ -32,7 +37,9 @@ def check_password():
 
 if check_password():
     # --- 3. MULTI-USER & COLOR THEMING ---
-    user = st.radio("Who is training today?", ["Jason", "Angelle"], horizontal=True)
+    # NO MORE RADIO BUTTON! We pull the user directly from memory.
+    user = st.session_state["logged_in_user"]
+    
     page_bg_color = "#1E3A8A" if user == "Jason" else "#0D9488"
     side_bg = "#162A61" if user == "Jason" else "#0A6E65"
 
