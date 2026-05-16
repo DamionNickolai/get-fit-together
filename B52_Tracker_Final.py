@@ -14,24 +14,32 @@ st.set_page_config(
 
 # --- 2. PASSWORD & USER ACCOUNT SYSTEM ---
 def check_password():
-    def password_entered():
-        entered_pass = st.session_state["password"]
+    # If already verified in this session, don't show the login screen
+    if st.session_state.get("password_correct", False):
+        return True
+
+    # Main login form container
+    with st.container():
+        st.subheader("🔒 Gym Access Portal")
         
-        # Check if the password exists in our dictionary of users
-        if entered_pass in st.secrets["passwords"]:
-            st.session_state["password_correct"] = True
-            # Save the specific user's name into Streamlit's memory!
-            st.session_state["logged_in_user"] = st.secrets["passwords"][entered_pass]
-            del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
+        # Text input box - works with Enter key
+        entered_pass = st.text_input("Enter Password", type="password", key="login_password")
+        
+        # Dedicated Login Button
+        login_clicked = st.button("🚀 Log In", use_container_width=True, type="primary")
+        
+        # Trigger validation if they press Enter OR click the button
+        if login_clicked or (entered_pass and st.session_state.get("last_pass") != entered_pass):
+            st.session_state["last_pass"] = entered_pass # track to prevent double-firing
             
-    if "password_correct" not in st.session_state:
-        st.text_input("Enter Password", type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.text_input("Enter Password", type="password", on_change=password_entered, key="password")
-        st.error("😕 Password incorrect")
+            if entered_pass in st.secrets["passwords"]:
+                st.session_state["password_correct"] = True
+                st.session_state["logged_in_user"] = st.secrets["passwords"][entered_pass]
+                st.rerun()
+            elif entered_pass:
+                st.error("😕 Password incorrect")
+                return False
+                
         return False
     return True
 
