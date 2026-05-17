@@ -21,17 +21,17 @@ def check_password():
     with st.container():
         st.subheader("🔒 Gym Access Portal")
         
-        # Both entry fields render immediately on page load
-        typed_user = st.text_input("Profile Name", key="login_username").strip()
-        entered_pass = st.text_input("Password", type="password", key="login_password")
-        
-        login_clicked = st.button("🚀 Log In", use_container_width=True, type="primary")
-        
-        # Only evaluate authentication once the button is clicked or a form submission triggers
-        if login_clicked or (entered_pass and st.session_state.get("last_pass") != entered_pass):
-            st.session_state["last_pass"] = entered_pass 
+        # Wrap the entry sequence in a unified form block
+        with st.form("login_form", clear_on_submit=False):
+            # Adding autocomplete hints tells Google Passwords exactly what these fields are
+            typed_user = st.text_input("Profile Name", key="login_username", autocomplete="username").strip()
+            entered_pass = st.text_input("Password", type="password", key="login_password", autocomplete="current-password")
             
-            # Require both fields to be filled before running validation
+            # The submit button acts as the single gateway trigger
+            login_clicked = st.form_submit_button("🚀 Log In", use_container_width=True, type="primary")
+        
+        # Logic only evaluates after the form is submitted
+        if login_clicked:
             if not typed_user or not entered_pass:
                 st.warning("⚠️ Please fill in both fields.")
                 return False
@@ -89,13 +89,9 @@ if check_password():
         st.title(f"💪 Get Fit Together: {user}'s Session")
 
     # --- 4. DUAL-ENVIRONMENT GOOGLE SHEETS ROUTER ---
-    if role == "developer":  # (Or "dev_mode", whichever your app uses)
+    if role == "developer":
         # Connect to the Sandbox database
         conn = st.connection("gsheets_dev", type=GSheetsConnection)
-        
-        # Connect to the Backlog database (DEV ONLY)
-        conn_backlog = st.connection("gsheets_backlog", type=GSheetsConnection)
-        
     else:
         # Connect to the Live Production database
         conn = st.connection("gsheets_prod", type=GSheetsConnection)
@@ -303,7 +299,7 @@ if check_password():
         tab1, tab2, tab3, tab_admin = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library", "🛠️ Admin Panel"])
     else:
         tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
-        tab_admin = None  # Keeps the code from breaking for regular users
+        tab_admin = None
 
     with tab1:
         st.subheader("⌚ Today's Garmin Vitals")
@@ -453,53 +449,60 @@ if check_password():
         st.write("Child's Pose: Kneel, sit on heels, reach forward.")
 
     # ==========================================
-    # 🛠️ ADMIN PANEL: LIVE BACKLOG (DEV ONLY)
+    # 🛠️ ADMIN PANEL (DEVELOPERS ONLY)
     # ==========================================
-    if tab_admin:
+    if tab_admin is not None:
         with tab_admin:
-            st.subheader("📋 Project Backlog")
-            st.caption("Live sync from Google Sheets: 'Workout Logs - Backlog'")
+            st.subheader("🛠️ Developer Admin Panel")
             
             try:
-                # Securely pull the URL from secrets
-                backlog_url = st.secrets["app_config"]["backlog_sheet_url"]
-                backlog_df = conn.read(spreadsheet=backlog_url)
+                # 1. Connect using the dedicated backlog connection namespace
+                conn_backlog = st.connection("gsheets_backlog", type=GSheetsConnection)
                 
-                # 1. Split the data to protect historical "Done" items
-                active_df = backlog_df[backlog_df["Status"] != "Done"]
-                done_df = backlog_df[backlog_df["Status"] == "Done"]
+                # 2. Read the raw data
+                df_backlog = conn_backlog.read()
                 
-                # 2. Render an interactive data editor
-                edited_df = st.data_editor(
-                    active_df,
-                    # NEW: Force the visual order of columns left-to-right
-                    column_order=["Status", "ID", "Category", "Feature", "Priority", "Notes"],
+                # 3. Move "Status" to the first column position if it exists
+                if "Status" in df_backlog.columns:
+                    cols = ["Status"] + [col for col in df_backlog.columns if col != "Status"]
+                    df_backlog = df_backlog[cols]
+                    
+                    # Safe UI Filter: Only show rows that are NOT 'Done'
+                    df_display = df_backlog[df_backlog["Status"] != "Done"]
+                else:
+                    df_display = df_backlog
+                
+                st.write("Manage Active App Backlog & QoL Features:")
+                
+                # 4. Render the interactive data editor with a Selectbox dropdown config
+                edited_backlog = st.data_editor(
+                    df_display,
+                    num_rows="dynamic", 
+                    use_container_width=True,
+                    key="admin_backlog_editor",
                     column_config={
                         "Status": st.column_config.SelectboxColumn(
                             "Status",
-                            help="Click to update task status",
-                            options=["Not Started", "In Progress", "Done"],
-                            required=True
+                            help="Update task progress",
+                            width="medium",
+                            options=["Backlog", "In Progress", "Blocked", "Done"],
+                            required=True,
                         )
-                    },
-                    # Lock all other columns so you don't accidentally edit the feature name
-                    disabled=["ID", "Category", "Feature", "Priority", "Notes"], 
-                    use_container_width=True,
-                    hide_index=True,
-                    key="backlog_editor"
+                    }
                 )
                 
-                # 3. Secure Save Mechanism
-                if st.button("💾 Save Backlog Updates", type="primary"):
-                    # Recombine the edited active items with the hidden Done items
-                    final_df = pd.concat([edited_df, done_df], ignore_index=True).sort_values("ID")
-                    
-                    # Push the complete dataset back to Google Sheets
-                    conn.update(data=final_df, spreadsheet=backlog_url)
-                    st.cache_data.clear()  # Force Streamlit to forget the old cached data
-                    st.success("Backlog successfully updated in Google Sheets!")
+                if st.button("💾 Push Updates to Google Sheets", type="primary"):
+                    # Safe Sync: Merge edited active items back with the archived 'Done' rows
+                    if "Status" in df_backlog.columns:
+                        df_done_archived = df_backlog[df_backlog["Status"] == "Done"]
+                        final_df_to_push = pd.concat([edited_backlog, df_done_archived], ignore_index=True)
+                    else:
+                        final_df_to_push = edited_backlog
+                        
+                    conn_backlog.update(data=final_df_to_push)
+                    st.success("✅ Backlog successfully synced to the cloud!")
+                    st.cache_data.clear()
                     st.rerun()
                     
             except Exception as e:
-                st.error(f"Failed to load the backlog. Check your connection: {e}")
-
+                st.error(f"Failed to load the backlog. System Error: {e}")
