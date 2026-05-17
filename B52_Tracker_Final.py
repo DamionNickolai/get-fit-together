@@ -15,43 +15,50 @@ st.set_page_config(
 
 # --- 2. PASSWORD & USER ACCOUNT SYSTEM ---
 def check_password():
-    # If already verified in this session, don't show the login screen
     if st.session_state.get("password_correct", False):
         return True
 
-    # Main login form container
     with st.container():
         st.subheader("🔒 Gym Access Portal")
         
-        # Text input box - works with Enter key
-        entered_pass = st.text_input("Enter Password", type="password", key="login_password")
+        # Both entry fields render immediately on page load
+        typed_user = st.text_input("Profile Name", key="login_username").strip()
+        entered_pass = st.text_input("Password", type="password", key="login_password")
         
-        # Dedicated Login Button
         login_clicked = st.button("🚀 Log In", use_container_width=True, type="primary")
         
-        # Trigger validation if they press Enter OR click the button
+        # Only evaluate authentication once the button is clicked or a form submission triggers
         if login_clicked or (entered_pass and st.session_state.get("last_pass") != entered_pass):
-            st.session_state["last_pass"] = entered_pass # track to prevent double-firing
+            st.session_state["last_pass"] = entered_pass 
             
+            # Require both fields to be filled before running validation
+            if not typed_user or not entered_pass:
+                st.warning("⚠️ Please fill in both fields.")
+                return False
+                
+            profile_meta = st.secrets["user_profiles"].get(typed_user)
             credentials = st.secrets["passwords"]
             
-            if entered_pass == credentials.get("jason"):
-                st.session_state["password_correct"] = True
-                st.session_state["logged_in_user"] = "Jason"
-                st.session_state["user_role"] = "user"
-                st.rerun()
-            elif entered_pass == credentials.get("angelle"):
-                st.session_state["password_correct"] = True
-                st.session_state["logged_in_user"] = "Angelle"
-                st.session_state["user_role"] = "user"
-                st.rerun()
-            elif entered_pass == credentials.get("dev_mode"):
-                st.session_state["password_correct"] = True
-                st.session_state["logged_in_user"] = "Jason"  # Default dev view to Jason
-                st.session_state["user_role"] = "developer"   # Master flag for sandbox database
-                st.rerun()
-            elif entered_pass:
-                st.error("😕 Password incorrect")
+            if profile_meta:
+                secret_key = profile_meta["password_key"]
+                correct_password = credentials.get(secret_key)
+                
+                if entered_pass == correct_password:
+                    st.session_state["password_correct"] = True
+                    st.session_state["user_role"] = profile_meta["role"]
+                    
+                    # Dynamically route the developer to their preferred data workspace profile
+                    if profile_meta["role"] == "developer":
+                        st.session_state["logged_in_user"] = st.secrets["app_config"]["default_dev_workspace"]
+                    else:
+                        st.session_state["logged_in_user"] = typed_user
+                        
+                    st.rerun()
+                else:
+                    st.error("😕 Access denied. Check your credentials.")
+                    return False
+            else:
+                st.error("😕 Access denied. Check your credentials.")
                 return False
                 
         return False
