@@ -82,9 +82,15 @@ if check_password():
         st.title(f"💪 Get Fit Together: {user}'s Session")
 
     # --- 4. DUAL-ENVIRONMENT GOOGLE SHEETS ROUTER ---
-    if role == "developer":
+    if role == "developer":  # (Or "dev_mode", whichever your app uses)
+        # Connect to the Sandbox database
         conn = st.connection("gsheets_dev", type=GSheetsConnection)
+        
+        # Connect to the Backlog database (DEV ONLY)
+        conn_backlog = st.connection("gsheets_backlog", type=GSheetsConnection)
+        
     else:
+        # Connect to the Live Production database
         conn = st.connection("gsheets_prod", type=GSheetsConnection)
 
     try:
@@ -286,7 +292,11 @@ if check_password():
         st.write(daily_metrics.get("Raw", "No raw data found"))
     
     # --- 6. MAIN DASHBOARD TABS ---
-    tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
+    if role == "developer":
+        tab1, tab2, tab3, tab_admin = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library", "🛠️ Admin Panel"])
+    else:
+        tab1, tab2, tab3 = st.tabs(["📈 Progress Charts", "📅 Training History", "📚 Reference Library"])
+        tab_admin = None  # Keeps the code from breaking for regular users
 
     with tab1:
         st.subheader("⌚ Today's Garmin Vitals")
@@ -434,3 +444,55 @@ if check_password():
         st.write("Half-kneeling, squeeze glute, push hips forward.")
         st.markdown("### **4. Spinal Decompression (45-60s)**")
         st.write("Child's Pose: Kneel, sit on heels, reach forward.")
+
+    # ==========================================
+    # 🛠️ ADMIN PANEL: LIVE BACKLOG (DEV ONLY)
+    # ==========================================
+    if tab_admin:
+        with tab_admin:
+            st.subheader("📋 Project Backlog")
+            st.caption("Live sync from Google Sheets: 'Workout Logs - Backlog'")
+            
+            try:
+                # Securely pull the URL from secrets
+                backlog_url = st.secrets["app_config"]["backlog_sheet_url"]
+                backlog_df = conn.read(spreadsheet=backlog_url)
+                
+                # 1. Split the data to protect historical "Done" items
+                active_df = backlog_df[backlog_df["Status"] != "Done"]
+                done_df = backlog_df[backlog_df["Status"] == "Done"]
+                
+                # 2. Render an interactive data editor
+                edited_df = st.data_editor(
+                    active_df,
+                    # NEW: Force the visual order of columns left-to-right
+                    column_order=["Status", "ID", "Category", "Feature", "Priority", "Notes"],
+                    column_config={
+                        "Status": st.column_config.SelectboxColumn(
+                            "Status",
+                            help="Click to update task status",
+                            options=["Not Started", "In Progress", "Done"],
+                            required=True
+                        )
+                    },
+                    # Lock all other columns so you don't accidentally edit the feature name
+                    disabled=["ID", "Category", "Feature", "Priority", "Notes"], 
+                    use_container_width=True,
+                    hide_index=True,
+                    key="backlog_editor"
+                )
+                
+                # 3. Secure Save Mechanism
+                if st.button("💾 Save Backlog Updates", type="primary"):
+                    # Recombine the edited active items with the hidden Done items
+                    final_df = pd.concat([edited_df, done_df], ignore_index=True).sort_values("ID")
+                    
+                    # Push the complete dataset back to Google Sheets
+                    conn.update(data=final_df, spreadsheet=backlog_url)
+                    st.cache_data.clear()  # Force Streamlit to forget the old cached data
+                    st.success("Backlog successfully updated in Google Sheets!")
+                    st.rerun()
+                    
+            except Exception as e:
+                st.error(f"Failed to load the backlog. Check your connection: {e}")
+
