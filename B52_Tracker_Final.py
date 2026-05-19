@@ -5,7 +5,7 @@ import pandas as pd
 import datetime
 import plotly.express as px
 import hashlib # 🟢 Added for secure mobile tokens
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 # Must be the very first Streamlit command
 st.set_page_config(
