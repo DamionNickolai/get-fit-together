@@ -44,9 +44,11 @@ def check_password():
                 st.session_state["logged_in_user"] = url_user
                 st.session_state["profile_data"] = user_data.to_dict() # Stores their custom colors!
                 
-                # 🟢 BULLETPROOF ENVIRONMENT DETECTION
-                env_status = st.secrets.get("app_config", {}).get("environment", "production")
-                is_local = (env_status == "local")
+                # 🟢 THE NEW BULLETPROOF DETECTION
+                host_header = st.context.headers.get("Host", "")
+                # If 'streamlit' is in the URL, we are in production. If not, we are local!
+                is_local = "streamlit" not in host_header.lower()
+                
                 st.session_state["is_environment_local"] = is_local
                 
                 if user_data["Role"] == "developer" and is_local:
