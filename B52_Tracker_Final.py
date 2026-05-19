@@ -703,7 +703,7 @@ if check_password():
 
     # 2. ⚖️ DYNAMIC WEIGHT DISPLAY
     if show_weight_box:
-        weight_input = st.sidebar.text_input("Body Weight (lbs)", placeholder="e.g., 180.5", key=f"bw_{reset_id}")
+        weight_input = st.sidebar.text_input("Body Weight (lbs)", key=f"bw_{reset_id}")
     else:
         weight_input = ""
 
@@ -739,11 +739,11 @@ if check_password():
 
         col_sets, col_reps, col_weight = st.sidebar.columns(3)
         with col_sets:
-            input_sets = st.text_input("Sets", placeholder="e.g., 3", key=f"sets_{reset_id}")
+            input_sets = st.text_input("Sets", key=f"sets_{reset_id}")
         with col_reps:
-            input_reps = st.text_input("Reps", placeholder="e.g., 10", key=f"reps_{reset_id}")
+            input_reps = st.text_input("Reps", key=f"reps_{reset_id}")
         with col_weight:
-            input_weight_lifted = st.text_input("Weight", placeholder="e.g., 185.5", key=f"wgt_{reset_id}")
+            input_weight_lifted = st.text_input("Weight", key=f"wgt_{reset_id}")
 
         if input_sets.strip() or input_reps.strip() or input_weight_lifted.strip():
             try:
@@ -758,7 +758,7 @@ if check_password():
     elif selected_q != "Custom" and "Outdoor" in selected_w:
         # 🟢 THE NEW OUTDOOR DURATION TRACKER
         st.sidebar.markdown("### ⏱️ Session Duration")
-        input_duration = st.sidebar.text_input("Duration (Minutes)", placeholder="e.g., 30", key=f"dur_{reset_id}")
+        input_duration = st.sidebar.text_input("Duration (Minutes)", key=f"dur_{reset_id}")
 
         if input_duration.strip():
             try:
