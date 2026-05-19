@@ -44,8 +44,9 @@ def check_password():
                 st.session_state["logged_in_user"] = url_user
                 st.session_state["profile_data"] = user_data.to_dict() # Stores their custom colors!
                 
-                host_header = st.context.headers.get("Host", "")
-                is_local = "localhost" in host_header or "127.0.0.1" in host_header or "192.168" in host_header
+                # 🟢 BULLETPROOF ENVIRONMENT DETECTION
+                env_status = st.secrets.get("app_config", {}).get("environment", "production")
+                is_local = (env_status == "local")
                 
                 if user_data["Role"] == "developer" and is_local:
                     st.session_state["user_role"] = "developer"
@@ -88,8 +89,9 @@ def check_password():
                     st.query_params["user"] = typed_user
                     st.query_params["auth"] = secure_token
                     
-                    host_header = st.context.headers.get("Host", "")
-                    is_local = "localhost" in host_header or "127.0.0.1" in host_header or "192.168" in host_header
+                    # 🟢 BULLETPROOF ENVIRONMENT DETECTION
+                    env_status = st.secrets.get("app_config", {}).get("environment", "production")
+                    is_local = (env_status == "local")
                     
                     if user_data["Role"] == "developer" and is_local:
                         st.session_state["user_role"] = "developer"
