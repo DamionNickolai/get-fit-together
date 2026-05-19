@@ -135,12 +135,6 @@ if check_password():
         .stTabs [data-baseweb="tab"] {{ color: white !important; }}
         </style>
         """, unsafe_allow_html=True)
-    
-    if role == "developer":
-        st.warning("🚧 DEV MODE ACTIVE: Connected to Workout Logs - DEV Sandbox")
-        st.title(f"💪 Sandbox Environment: {user}'s Test Session")
-    else:
-        st.title(f"💪 Get Fit Together: {user}'s Session")
 
     # 📡 THE BUG RADAR (Only alerts if you are the developer)
     if role == "developer":
