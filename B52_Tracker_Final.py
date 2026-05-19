@@ -4,6 +4,7 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import plotly.express as px
+import hashlib # 🟢 Added for secure mobile tokens
 APP_VERSION = "1.0.0"
 
 # Must be the very first Streamlit command
@@ -16,16 +17,47 @@ st.set_page_config(
 
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
 def check_password():
+    # 1. Check if they are already authenticated in this immediate session
     if st.session_state.get("password_correct", False):
         return True
 
+    # 🟢 2. THE MOBILE FIX: Check for a secure token in the URL
+    url_token = st.query_params.get("auth", None)
+    url_user = st.query_params.get("user", None)
+
+    if url_token and url_user:
+        profile_meta = st.secrets["user_profiles"].get(url_user)
+        if profile_meta:
+            secret_key = profile_meta["password_key"]
+            correct_password = st.secrets["passwords"].get(secret_key)
+            
+            # Recreate the hash to verify they didn't just guess a URL token
+            expected_token = hashlib.sha256(f"{url_user}{correct_password}".encode()).hexdigest()[:20]
+            
+            if url_token == expected_token:
+                st.session_state["password_correct"] = True
+                st.session_state["logged_in_user"] = url_user
+                
+                # Environment Detection
+                host_header = st.context.headers.get("Host", "")
+                is_local = "localhost" in host_header or "127.0.0.1" in host_header or "192.168" in host_header
+                
+                if profile_meta["role"] == "developer" and is_local:
+                    st.session_state["user_role"] = "developer"
+                    st.session_state["logged_in_user"] = st.secrets["app_config"]["default_dev_workspace"]
+                else:
+                    st.session_state["user_role"] = "user"
+                    
+                return True
+
+    # 3. If no URL token and no session state, show the Login Form
     with st.container():
         st.subheader("🔒 Gym Access Portal")
         
         with st.form("login_form", clear_on_submit=False):
             typed_user = st.text_input("Profile Name", key="login_username", autocomplete="username").strip()
             entered_pass = st.text_input("Password", type="password", key="login_password", autocomplete="current-password")
-            login_clicked = st.form_submit_button("🚀 Log In", width="stretch", type="primary")
+            login_clicked = st.form_submit_button("🚀 Log In", type="primary", use_container_width=True)
         
         if login_clicked:
             if not typed_user or not entered_pass:
@@ -42,13 +74,17 @@ def check_password():
                 if entered_pass == correct_password:
                     st.session_state["password_correct"] = True
                     
-                    # 🌐 ENVIRONMENT DETECTION LOGIC
+                    # 🟢 THE FIX: Generate the secure URL token and push it to the browser's address bar
+                    secure_token = hashlib.sha256(f"{typed_user}{correct_password}".encode()).hexdigest()[:20]
+                    st.query_params["user"] = typed_user
+                    st.query_params["auth"] = secure_token
+                    
+                    # Environment detection
                     host_header = st.context.headers.get("Host", "")
                     is_local = "localhost" in host_header or "127.0.0.1" in host_header or "192.168" in host_header
                     
                     if profile_meta["role"] == "developer" and is_local:
                         st.session_state["user_role"] = "developer"
-                        # Pulls your default dev workspace directly from TOML
                         st.session_state["logged_in_user"] = st.secrets["app_config"]["default_dev_workspace"]
                     else:
                         st.session_state["user_role"] = "user"
@@ -63,7 +99,6 @@ def check_password():
                 return False
                 
         return False
-    return True
 
 if check_password():
     # --- 3. DYNAMIC METADATA & COLOR THEMING ---
@@ -732,6 +767,9 @@ if check_password():
         st.session_state["password_correct"] = False
         st.session_state["logged_in_user"] = None
         st.session_state["user_role"] = None
+        
+        # 🟢 Wipes the magic URL tokens
+        st.query_params.clear() 
         st.rerun()
 
     # 🟢 2. THE PANIC BUTTON (Public Bug Reporter)
