@@ -92,9 +92,10 @@ def check_password():
                     st.query_params["user"] = typed_user
                     st.query_params["auth"] = secure_token
                     
-                    # 🟢 BULLETPROOF ENVIRONMENT DETECTION
-                    env_status = st.secrets.get("app_config", {}).get("environment", "production")
-                    is_local = (env_status == "local")
+                    # 🟢 THE NEW BULLETPROOF DETECTION (Replaces the old secrets check here too!)
+                    host_header = st.context.headers.get("Host", "")
+                    is_local = "streamlit" not in host_header.lower()
+                    
                     st.session_state["is_environment_local"] = is_local
                     
                     if user_data["Role"] == "developer" and is_local:
