@@ -703,9 +703,9 @@ if check_password():
 
     # 2. ⚖️ DYNAMIC WEIGHT DISPLAY
     if show_weight_box:
-        weight_input = st.sidebar.number_input("Body Weight (lbs)", step=0.1, min_value=0.0, key=f"bw_{reset_id}")
+        weight_input = st.sidebar.text_input("Body Weight (lbs)", placeholder="e.g., 180.5", key=f"bw_{reset_id}")
     else:
-        weight_input = 0.0
+        weight_input = ""
 
     # 3. 📝 STRUCTURED LIFT TRACKING
     if selected_q == "Custom":
@@ -739,22 +739,34 @@ if check_password():
 
         col_sets, col_reps, col_weight = st.sidebar.columns(3)
         with col_sets:
-            input_sets = st.number_input("Sets", min_value=0, step=1, key=f"sets_{reset_id}")
+            input_sets = st.text_input("Sets", placeholder="e.g., 3", key=f"sets_{reset_id}")
         with col_reps:
-            input_reps = st.number_input("Reps", min_value=0, step=1, key=f"reps_{reset_id}")
+            input_reps = st.text_input("Reps", placeholder="e.g., 10", key=f"reps_{reset_id}")
         with col_weight:
-            input_weight_lifted = st.number_input("Weight", min_value=0.0, step=2.5, key=f"wgt_{reset_id}")
-            
-        if input_sets > 0 or input_reps > 0 or input_weight_lifted > 0.0:
-            structured_log = f"{input_sets} Sets | {input_reps} Reps | {input_weight_lifted} lbs "
+            input_weight_lifted = st.text_input("Weight", placeholder="e.g., 185.5", key=f"wgt_{reset_id}")
+
+        if input_sets.strip() or input_reps.strip() or input_weight_lifted.strip():
+            try:
+                sets_val = int(input_sets) if input_sets.strip() else 0
+                reps_val = int(input_reps) if input_reps.strip() else 0
+                weight_val = float(input_weight_lifted) if input_weight_lifted.strip() else 0.0
+                if sets_val > 0 or reps_val > 0 or weight_val > 0.0:
+                    structured_log = f"{sets_val} Sets | {reps_val} Reps | {weight_val} lbs "
+            except ValueError:
+                pass
 
     elif selected_q != "Custom" and "Outdoor" in selected_w:
         # 🟢 THE NEW OUTDOOR DURATION TRACKER
         st.sidebar.markdown("### ⏱️ Session Duration")
-        input_duration = st.sidebar.number_input("Duration (Minutes)", min_value=0, step=5, key=f"dur_{reset_id}")
-        
-        if input_duration > 0:
-            structured_log = f"⏱️ {input_duration} mins "
+        input_duration = st.sidebar.text_input("Duration (Minutes)", placeholder="e.g., 30", key=f"dur_{reset_id}")
+
+        if input_duration.strip():
+            try:
+                duration_val = int(input_duration)
+                if duration_val > 0:
+                    structured_log = f"⏱️ {duration_val} mins "
+            except ValueError:
+                pass
 
     # 4. 📝 UNIVERSAL NOTES BOX
     extra_notes = st.sidebar.text_input("Notes / Explanation", placeholder="Optional: Provide any details...", key=f"notes_{reset_id}")
@@ -773,28 +785,34 @@ if check_password():
         elif not user_details.strip() and "Outdoor" not in final_details:
             st.sidebar.warning("Please add some workout details before submitting!")
         else:
-            with st.spinner("Syncing to cloud master sheets..."):
-            # ... (the rest of your try/except sync logic stays exactly the same)
-                try:
-                    new_log = {
-                        "User": user,
-                        "Date": str(date_input),
-                        "Activity": activity_value,
-                        "Body Weight": float(weight_input),
-                        "Details": final_details
-                    }
-                    new_row_df = pd.DataFrame([new_log])
-                    log_df = pd.concat([log_df, new_row_df], ignore_index=True)
-                    conn.update(data=log_df)
-                    st.cache_data.clear()
-                    
-                    # Force the auto-clear ghost ID to cycle
-                    st.session_state["form_reset"] += 1
-                    
-                    st.sidebar.success("🔥 Activity Successfully Logged!")
-                    st.rerun()
-                except Exception as log_err:
-                    st.sidebar.error(f"Failed to log entry: {log_err}")
+            try:
+                body_weight = float(weight_input) if weight_input.strip() else 0.0
+            except ValueError:
+                st.sidebar.error("❌ Body Weight must be a valid number (e.g., 180.5)")
+                body_weight = None
+
+            if body_weight is not None:
+                with st.spinner("Syncing to cloud master sheets..."):
+                    try:
+                        new_log = {
+                            "User": user,
+                            "Date": str(date_input),
+                            "Activity": activity_value,
+                            "Body Weight": body_weight,
+                            "Details": final_details
+                        }
+                        new_row_df = pd.DataFrame([new_log])
+                        log_df = pd.concat([log_df, new_row_df], ignore_index=True)
+                        conn.update(data=log_df)
+                        st.cache_data.clear()
+
+                        # Force the auto-clear ghost ID to cycle
+                        st.session_state["form_reset"] += 1
+
+                        st.sidebar.success("🔥 Activity Successfully Logged!")
+                        st.rerun()
+                    except Exception as log_err:
+                        st.sidebar.error(f"Failed to log entry: {log_err}")
     
     # ==========================================
     # ⚙️ SIDEBAR UTILITY FOOTER 
