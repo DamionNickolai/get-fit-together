@@ -703,7 +703,7 @@ if check_password():
 
     # 2. ⚖️ DYNAMIC WEIGHT DISPLAY
     if show_weight_box:
-        weight_input = st.sidebar.number_input("Body Weight (lbs)", value=0.0, step=0.1, min_value=0.0, key=f"bw_{reset_id}")
+        weight_input = st.sidebar.number_input("Body Weight (lbs)", step=0.1, min_value=0.0, key=f"bw_{reset_id}")
     else:
         weight_input = 0.0
 
@@ -739,11 +739,11 @@ if check_password():
 
         col_sets, col_reps, col_weight = st.sidebar.columns(3)
         with col_sets:
-            input_sets = st.number_input("Sets", min_value=0, value=0, step=1, key=f"sets_{reset_id}")
+            input_sets = st.number_input("Sets", min_value=0, step=1, key=f"sets_{reset_id}")
         with col_reps:
-            input_reps = st.number_input("Reps", min_value=0, value=0, step=1, key=f"reps_{reset_id}")
+            input_reps = st.number_input("Reps", min_value=0, step=1, key=f"reps_{reset_id}")
         with col_weight:
-            input_weight_lifted = st.number_input("Weight", min_value=0.0, value=0.0, step=2.5, key=f"wgt_{reset_id}")
+            input_weight_lifted = st.number_input("Weight", min_value=0.0, step=2.5, key=f"wgt_{reset_id}")
             
         if input_sets > 0 or input_reps > 0 or input_weight_lifted > 0.0:
             structured_log = f"{input_sets} Sets | {input_reps} Reps | {input_weight_lifted} lbs "
@@ -751,7 +751,7 @@ if check_password():
     elif selected_q != "Custom" and "Outdoor" in selected_w:
         # 🟢 THE NEW OUTDOOR DURATION TRACKER
         st.sidebar.markdown("### ⏱️ Session Duration")
-        input_duration = st.sidebar.number_input("Duration (Minutes)", min_value=0, value=0, step=5, key=f"dur_{reset_id}")
+        input_duration = st.sidebar.number_input("Duration (Minutes)", min_value=0, step=5, key=f"dur_{reset_id}")
         
         if input_duration > 0:
             structured_log = f"⏱️ {input_duration} mins "
