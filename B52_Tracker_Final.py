@@ -47,6 +47,7 @@ def check_password():
                 # 🟢 BULLETPROOF ENVIRONMENT DETECTION
                 env_status = st.secrets.get("app_config", {}).get("environment", "production")
                 is_local = (env_status == "local")
+                st.session_state["is_environment_local"] = is_local
                 
                 if user_data["Role"] == "developer" and is_local:
                     st.session_state["user_role"] = "developer"
@@ -92,6 +93,7 @@ def check_password():
                     # 🟢 BULLETPROOF ENVIRONMENT DETECTION
                     env_status = st.secrets.get("app_config", {}).get("environment", "production")
                     is_local = (env_status == "local")
+                    st.session_state["is_environment_local"] = is_local
                     
                     if user_data["Role"] == "developer" and is_local:
                         st.session_state["user_role"] = "developer"
