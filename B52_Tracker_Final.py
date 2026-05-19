@@ -157,10 +157,18 @@ if check_password():
             pass # Fails silently so it doesn't interrupt your workout logging
 
     # --- 4. DUAL-ENVIRONMENT GOOGLE SHEETS ROUTER ---
-    if role == "developer":
+    # 🟢 THE FIX: Routing is now tied to the environment, NOT your role.
+    if st.session_state.get("is_environment_local", False):
         conn = st.connection("gsheets_dev", type=GSheetsConnection)
+        st.warning("🚧 DEV MODE ACTIVE: Connected to Workout Logs - DEV Sandbox")
     else:
         conn = st.connection("gsheets_prod", type=GSheetsConnection)
+
+    # 🟢 The Title UI (This stays tied to your role so you get your developer greeting!)
+    if role == "developer":
+        st.title(f"💪 Developer Session: {user}")
+    else:
+        st.title(f"💪 Get Fit Together: {user}'s Session")
 
     # 🟢 THE READ-ONLY LOCK FLAG
     database_locked = False
