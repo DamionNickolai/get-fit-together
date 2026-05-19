@@ -17,40 +17,44 @@ st.set_page_config(
 
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
 def check_password():
-    # 1. Check if they are already authenticated in this immediate session
     if st.session_state.get("password_correct", False):
         return True
 
-    # 🟢 2. THE MOBILE FIX: Check for a secure token in the URL
+    # 🟢 NEW: Pull the user database from the 'Users' tab of the Backlog sheet
+    try:
+        conn_admin = st.connection("gsheets_backlog", type=GSheetsConnection)
+        users_df = conn_admin.read(worksheet="Users", ttl=600) # Caches for 10 mins so login is instant
+    except Exception as e:
+        st.error("⚠️ Unable to connect to the User Database.")
+        return False
+
     url_token = st.query_params.get("auth", None)
     url_user = st.query_params.get("user", None)
 
-    if url_token and url_user:
-        profile_meta = st.secrets["user_profiles"].get(url_user)
-        if profile_meta:
-            secret_key = profile_meta["password_key"]
-            correct_password = st.secrets["passwords"].get(secret_key)
-            
-            # Recreate the hash to verify they didn't just guess a URL token
+    # 1. Check for the Magic URL Token (Mobile Bypass)
+    if url_token and url_user and not users_df.empty:
+        user_match = users_df[users_df["Username"] == url_user]
+        if not user_match.empty:
+            user_data = user_match.iloc[0]
+            correct_password = str(user_data["Password"])
             expected_token = hashlib.sha256(f"{url_user}{correct_password}".encode()).hexdigest()[:20]
             
             if url_token == expected_token:
                 st.session_state["password_correct"] = True
                 st.session_state["logged_in_user"] = url_user
+                st.session_state["profile_data"] = user_data.to_dict() # Stores their custom colors!
                 
-                # Environment Detection
                 host_header = st.context.headers.get("Host", "")
                 is_local = "localhost" in host_header or "127.0.0.1" in host_header or "192.168" in host_header
                 
-                if profile_meta["role"] == "developer" and is_local:
+                if user_data["Role"] == "developer" and is_local:
                     st.session_state["user_role"] = "developer"
                     st.session_state["logged_in_user"] = st.secrets["app_config"]["default_dev_workspace"]
                 else:
-                    st.session_state["user_role"] = "user"
-                    
+                    st.session_state["user_role"] = user_data["Role"]
                 return True
 
-    # 3. If no URL token and no session state, show the Login Form
+    # 2. Show the standard Login Form
     with st.container():
         st.subheader("🔒 Gym Access Portal")
         
@@ -64,30 +68,34 @@ def check_password():
                 st.warning("⚠️ Please fill in both fields.")
                 return False
                 
-            profile_meta = st.secrets["user_profiles"].get(typed_user)
-            credentials = st.secrets["passwords"]
+            if users_df.empty:
+                st.error("Database is empty or failed to load.")
+                return False
+
+            # Match what they typed against the Google Sheet
+            user_match = users_df[users_df["Username"] == typed_user]
             
-            if profile_meta:
-                secret_key = profile_meta["password_key"]
-                correct_password = credentials.get(secret_key)
+            if not user_match.empty:
+                user_data = user_match.iloc[0]
+                correct_password = str(user_data["Password"])
                 
                 if entered_pass == correct_password:
                     st.session_state["password_correct"] = True
+                    st.session_state["profile_data"] = user_data.to_dict() # Stores profile variables
                     
-                    # 🟢 THE FIX: Generate the secure URL token and push it to the browser's address bar
+                    # Generate the Magic URL
                     secure_token = hashlib.sha256(f"{typed_user}{correct_password}".encode()).hexdigest()[:20]
                     st.query_params["user"] = typed_user
                     st.query_params["auth"] = secure_token
                     
-                    # Environment detection
                     host_header = st.context.headers.get("Host", "")
                     is_local = "localhost" in host_header or "127.0.0.1" in host_header or "192.168" in host_header
                     
-                    if profile_meta["role"] == "developer" and is_local:
+                    if user_data["Role"] == "developer" and is_local:
                         st.session_state["user_role"] = "developer"
                         st.session_state["logged_in_user"] = st.secrets["app_config"]["default_dev_workspace"]
                     else:
-                        st.session_state["user_role"] = "user"
+                        st.session_state["user_role"] = user_data["Role"]
                         st.session_state["logged_in_user"] = typed_user
                         
                     st.rerun()
@@ -105,11 +113,13 @@ if check_password():
     user = st.session_state["logged_in_user"]
     role = st.session_state["user_role"]
     
-    current_profile = st.secrets["user_profiles"].get(user, {})
+    # 🟢 NEW: Pulls from the database dictionary we cached during login
+    current_profile = st.session_state.get("profile_data", {})
     
-    page_bg_color = current_profile.get("primary_color", "#1F2937")
-    side_bg = current_profile.get("sidebar_color", "#111827")
-    chart_line_color = current_profile.get("line_color", "#34D399")
+    # Mapped directly to your exact Google Sheets headers
+    page_bg_color = current_profile.get("Primary_Color", "#1F2937")
+    side_bg = current_profile.get("Sidebar_Color", "#111827")
+    chart_line_color = current_profile.get("Line_Color", "#34D399")
 
     st.markdown(f"""
         <style>
