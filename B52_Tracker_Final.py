@@ -422,11 +422,11 @@ if check_password():
         }
 
     # ==========================================
-    # 📚 ANGELLE'S 12-MONTH MACROCYCLE DATABASE
+    # 📚 12-MONTH MACROCYCLE DATABASE
     # ==========================================
     # (Defined here openly so both Section 5 Sidebar and Section 6 Tabs can see it)
     ROUTINES = {
-        "Q1: Foundation & Endurance": {
+        "Phase 1: Foundation & Endurance": {
             "Focus": "Building joint stability, mastering mechanics, aerobic base. Rest: 60-90s.",
             "Workouts": {
                 "Workout A: Upper Body & Core": [
@@ -456,7 +456,7 @@ if check_password():
                 ]
             }
         },
-        "Q2: Hypertrophy (Muscle Building)": {
+        "Phase 2: Hypertrophy (Muscle Building)": {
             "Focus": "Increasing volume to build lean muscle and raise metabolic rate. Rest: 45-60s.",
             "Workouts": {
                 "Workout A: Push Day (Chest/Shoulders/Triceps)": [
@@ -485,7 +485,7 @@ if check_password():
                 ]
             }
         },
-        "Q3: Strength & Power": {
+        "Phase 3: Strength & Power": {
             "Focus": "Lifting heavier weights for fewer reps paired with explosive movements. Rest: 90-120s.",
             "Workouts": {
                 "Workout A: Heavy Upper": [
@@ -514,7 +514,7 @@ if check_password():
                 ]
             }
         },
-        "Q4: Metabolic Conditioning": {
+        "Phase 4: Metabolic Conditioning": {
             "Focus": "Maximum calorie burn using non-stop back-to-back Supersets.",
             "Workouts": {
                 "Workout A: Upper Body Supersets": [
@@ -547,16 +547,20 @@ if check_password():
     # --- 5. LOGGING SIDEBAR (Ultra-Clean Input Only) ---
     st.sidebar.header("🏋️ Log a Session")
     
-    # 📅 CALENDAR ENGINE
-    current_month = datetime.date.today().month
-    if current_month in [1, 2, 3]: current_quarter_name = "Q1: Foundation & Endurance"
-    elif current_month in [4, 5, 6]: current_quarter_name = "Q2: Hypertrophy (Muscle Building)"
-    elif current_month in [7, 8, 9]: current_quarter_name = "Q3: Strength & Power"
-    else: current_quarter_name = "Q4: Metabolic Conditioning"
-
-    st.sidebar.markdown("### 🗓️ Current Training Phase")
-    quarter_options = [current_quarter_name, "Custom"]
-    selected_q = st.sidebar.selectbox("Current Phase", options=quarter_options, index=0)
+    # 🟢 NEW PHASE SELECTION MAPPER
+    # The user sees the short name, but Python uses the long name for the database
+    phase_options = ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Custom"]
+    selected_short_phase = st.sidebar.selectbox("Phase", options=phase_options, index=0)
+    
+    phase_map = {
+        "Phase 1": "Phase 1: Foundation & Endurance",
+        "Phase 2": "Phase 2: Hypertrophy (Muscle Building)",
+        "Phase 3": "Phase 3: Strength & Power",
+        "Phase 4": "Phase 4: Metabolic Conditioning",
+        "Custom": "Custom"
+    }
+    
+    selected_q = phase_map[selected_short_phase]
     
     date_input = st.sidebar.date_input("Date", datetime.date.today())
     
@@ -833,15 +837,9 @@ if check_password():
         st.subheader("🗓️ 12-Month Periodized Roadmap")
         st.write("---")
         
-        # Premium Active Notification Banner
-        st.info(f"📆 **Active Calendar Phase Focus:** {current_quarter_name}")
-        
-        # Render the macrocycle accordion cards
+        # 🟢 THE FIX: Removed the active banner, and forced expanded=False for all cards
         for q_key, q_data in ROUTINES.items():
-            is_active = (q_key == current_quarter_name)
-            title_prefix = "🔥 CURRENT PHASE: " if is_active else "📌 "
-            
-            with st.expander(f"{title_prefix}{q_key}", expanded=is_active):
+            with st.expander(f"📌 {q_key}", expanded=False):
                 st.markdown(f"🎯 **Macro Target:** *{q_data['Focus']}*")
                 st.write("---")
                 
