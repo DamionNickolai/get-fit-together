@@ -262,8 +262,14 @@ if check_password():
         tz = ZoneInfo("America/Chicago")
         today = datetime.datetime.now(tz).date().isoformat()
 
-        garmin_section = "garmin_dev" if role == "developer" else "garmin_prod"
-        g_prefix = current_profile.get("garmin_prefix", "unknown")
+        # 🟢 THE FIX: Point Garmin to the environment, not the user role!
+        if st.session_state.get("is_environment_local", False):
+            garmin_section = "garmin_dev"
+        else:
+            garmin_section = "garmin_prod"
+            
+        # 🟢 THE FIX: Exact case match to your Google Sheets header!
+        g_prefix = current_profile.get("Garmin_Prefix", "unknown")
 
         # Build identity keys
         g_email = st.secrets[garmin_section].get(f"{g_prefix}_email", "")
@@ -275,8 +281,25 @@ if check_password():
         # Cache partition key (prevents cross-user data leaks)
         cache_id = f"{g_prefix}:{user}:{today}"
 
-        # Create Garmin client if needed
+        # 🟢 THE DEV FIX: Put Garmin in Standby Mode to prevent API rate-limiting
+        is_dev_sandbox = (role == "developer" and st.session_state.get("is_environment_local", False))
+        connect_garmin_clicked = False
+        
+        # Only show the button if they are a dev, local, and haven't connected yet!
+        if is_dev_sandbox and client_key not in st.session_state:
+            st.sidebar.info("🚧 Garmin API: Standby Mode")
+            connect_garmin_clicked = st.sidebar.button("🚀 Connect to Garmin", use_container_width=True)
+
+        # Determine if we should pull the trigger on the API
+        run_login_sequence = False
         if client_key not in st.session_state:
+            if not is_dev_sandbox:
+                run_login_sequence = True # Auto-login for Production and normal Users
+            elif connect_garmin_clicked:
+                run_login_sequence = True # Manual override for the Developer
+
+        # Create Garmin client if the trigger was pulled
+        if run_login_sequence:
             if g_email and g_pass:
                 with st.spinner("Establishing secure link to Garmin..."):
                     try:
@@ -428,7 +451,8 @@ if check_password():
                     weight_history_list=history_list
                 )
         else:
-            garmin_status = "missing_secrets"
+            # 🟢 NEW: Accurately reports Standby vs Missing status
+            garmin_status = "dev_standby" if (is_dev_sandbox and client_key not in st.session_state) else "missing_secrets"
             daily_metrics = {
                 "Steps": "0",
                 "RHR": 60,
@@ -866,11 +890,14 @@ if check_password():
         "📢 What's New" 
     ]
     
-    # ONLY append the Admin tab if running locally as a developer
-    if role == "developer":
+    # 🟢 THE FIX: Grab the environment flag we saved during login
+    is_local_env = st.session_state.get("is_environment_local", False)
+    
+    # ONLY append the Admin tab if running locally AND you are a developer
+    if role == "developer" and is_local_env:
         tab_titles.append("🛠️ Admin Panel")
         
-    # Generate the tabs based on the current user's role
+    # Generate the tabs based on the current user's role/location
     tabs = st.tabs(tab_titles)
     
     # Assign the first 5 public tabs
@@ -878,14 +905,14 @@ if check_password():
     tab2 = tabs[1] 
     tab3 = tabs[2] 
     tab4 = tabs[3] 
-    tab_changelog = tabs[4] # 🟢 Maps perfectly to your recovered code
+    tab_changelog = tabs[4] 
     
     # Default tab_admin to None so it doesn't crash for regular users
     tab_admin = None 
     
-    # If developer, assign the 6th tab to tab_admin
-    if role == "developer":
-        tab_admin = tabs[5] # 🟢 Maps perfectly to your recovered code
+    # If developer AND local, assign the 6th tab to tab_admin
+    if role == "developer" and is_local_env:
+        tab_admin = tabs[5]
 
     # ------------------------------------------
     # 📚 TAB 1: TRAINING BLUEPRINT
@@ -1119,7 +1146,9 @@ if check_password():
             st.subheader("🛠️ Developer Admin Panel")
             try:
                 conn_backlog = st.connection("gsheets_backlog", type=GSheetsConnection)
-                df_backlog = conn_backlog.read()
+                
+                # 🟢 FIX 1: Force a fresh read every time (ttl=0)
+                df_backlog = conn_backlog.read(ttl=0) 
                 
                 for col in ["Public Message", "Release Date", "Version"]:
                     if col not in df_backlog.columns: df_backlog[col] = ""
@@ -1169,6 +1198,11 @@ if check_password():
                     conn_backlog.update(data=final_df_to_push)
                     st.success(f"✅ Version {push_version} successfully synced to the cloud!")
                     st.cache_data.clear()
+                    
+                    # 🟢 FIX 2: Wipe the editor's ghost memory before the rerun!
+                    if "admin_backlog_editor" in st.session_state:
+                        del st.session_state["admin_backlog_editor"]
+                        
                     st.rerun()
             except Exception as e:
                 st.error(f"Failed to load the backlog. System Error: {e}")
