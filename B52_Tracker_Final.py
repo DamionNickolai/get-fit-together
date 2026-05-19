@@ -155,7 +155,8 @@ if check_password():
 
     # --- 4. DUAL-ENVIRONMENT GOOGLE SHEETS ROUTER ---
     # 🟢 THE FIX: Routing is now tied to the environment, NOT your role.
-    if st.session_state.get("is_environment_local", False):
+    is_local_env = st.session_state.get("is_environment_local", False)
+    if is_local_env:
         conn = st.connection("gsheets_dev", type=GSheetsConnection)
         st.warning("🚧 DEV MODE ACTIVE: Connected to Workout Logs - DEV Sandbox")
     else:
@@ -169,7 +170,7 @@ if check_password():
 
     # 🟢 THE READ-ONLY LOCK FLAG
     database_locked = False
-    
+
     try:
         log_df = conn.read(ttl=600)
         if not log_df.empty:
@@ -899,38 +900,44 @@ if check_password():
     # ==========================================
     # 📋 6. MAIN DASHBOARD TABS (Routing Fix)
     # ==========================================
-    # Base tabs visible to EVERYONE (Changelog is public)
+    # Base tabs visible to EVERYONE
     tab_titles = [
-        "📚 Training Blueprint", 
-        "⚡ Daily Vitals", 
-        "📈 Progress Charts", 
-        "📋 History Log",
-        "📢 What's New" 
+        "📚 Training Blueprint",
+        "⚡ Daily Vitals",
+        "📈 Progress Charts",
+        "📋 History Log"
     ]
-    
-    # 🟢 THE FIX: Grab the environment flag we saved during login
-    is_local_env = st.session_state.get("is_environment_local", False)
-    
+
+    # 🟢 THE FIX: Only show What's New tab in production
+    if not is_local_env:
+        tab_titles.append("📢 What's New")
+
     # ONLY append the Admin tab if running locally AND you are a developer
     if role == "developer" and is_local_env:
         tab_titles.append("🛠️ Admin Panel")
         
     # Generate the tabs based on the current user's role/location
     tabs = st.tabs(tab_titles)
-    
-    # Assign the first 5 public tabs
-    tab1 = tabs[0] 
-    tab2 = tabs[1] 
-    tab3 = tabs[2] 
-    tab4 = tabs[3] 
-    tab_changelog = tabs[4] 
-    
-    # Default tab_admin to None so it doesn't crash for regular users
-    tab_admin = None 
-    
-    # If developer AND local, assign the 6th tab to tab_admin
+
+    # Assign the first 4 public tabs
+    tab1 = tabs[0]
+    tab2 = tabs[1]
+    tab3 = tabs[2]
+    tab4 = tabs[3]
+
+    # Default to None
+    tab_changelog = None
+    tab_admin = None
+
+    # Assign What's New tab only if it exists (production only)
+    tab_idx = 4
+    if not is_local_env:
+        tab_changelog = tabs[tab_idx]
+        tab_idx += 1
+
+    # Assign Admin tab if developer and local
     if role == "developer" and is_local_env:
-        tab_admin = tabs[5]
+        tab_admin = tabs[tab_idx]
 
     # ------------------------------------------
     # 📚 TAB 1: TRAINING BLUEPRINT
@@ -1092,69 +1099,84 @@ if check_password():
                 st.info("No history found for this user.")
 
    # ==========================================
-    # TAB 5: 📢 WHAT'S NEW (CHANGELOG)
+    # TAB 5: 📢 WHAT'S NEW (CHANGELOG) - PRODUCTION ONLY
     # ==========================================
-    with tab_changelog:
-        st.subheader("📢 What's New: Release Notes")
-        st.write("") 
-        try:
-            conn_changelog = st.connection("gsheets_backlog", type=GSheetsConnection)
-            df_changelog = conn_changelog.read(ttl=3600)
-            
-            if "Status" in df_changelog.columns:
-                done_items = df_changelog[df_changelog["Status"] == "Done"].copy()
-                if not done_items.empty:
-                    if "Release Date" not in done_items.columns: done_items["Release Date"] = "Unknown Date"
-                    if "Version" not in done_items.columns: done_items["Version"] = ""
-                    
-                    done_items["Release Date"] = done_items["Release Date"].fillna("Unknown Date").replace("", "Unknown Date")
-                    done_items["Version"] = done_items["Version"].fillna("").replace("nan", "")
-                    done_items = done_items.sort_values(by="Release Date", ascending=False)
-                    
-                    unique_dates = done_items["Release Date"].unique()
-                    recent_dates = unique_dates[:3]
-                    older_dates = unique_dates[3:]
-                    
-                    def render_release_group(group_df, date_str):
-                        v_string = group_df["Version"].iloc[0] if "Version" in group_df.columns and str(group_df["Version"].iloc[0]).strip() != "" else ""
-                        header_ext = f" | v{v_string}" if v_string else ""
-                        st.markdown(f"### 🚀 Update: {date_str}{header_ext}")
-                        
-                        for _, row in group_df.iterrows():
-                            task = row.get("Task / Feature", row.get("Task", row.get("Feature", ""))) or "System Update"
-                            category = str(row.get("Category", "General")).strip()
-                            cat_lower = category.lower()
-                            
-                            if "bug" in cat_lower or "fix" in cat_lower: emoji = "🐛"
-                            elif "ui" in cat_lower or "design" in cat_lower or "clean" in cat_lower: emoji = "🎨"
-                            elif "integrat" in cat_lower or "api" in cat_lower or "garmin" in cat_lower: emoji = "🔌"
-                            elif "feature" in cat_lower or "new" in cat_lower: emoji = "✨"
-                            else: emoji = "📌"
+    if tab_changelog is not None:
+        with tab_changelog:
+            st.subheader("📢 What's New: Release Notes")
+            st.write("")
+            try:
+                conn_changelog = st.connection("gsheets_backlog", type=GSheetsConnection)
+                df_changelog = conn_changelog.read(ttl=3600)
 
-                            public_msg = row.get("Public Message", "")
-                            if pd.isna(public_msg) or str(public_msg).strip() == "":
-                                public_msg = "Under-the-hood improvements and bug fixes."
-                                
-                            st.markdown(f"**{emoji} [{category}] {task}**")
-                            st.caption(f"&emsp; *{public_msg}*")
-                            st.write("") 
-                        st.divider()
+                if "Status" in df_changelog.columns:
+                    done_items = df_changelog[df_changelog["Status"] == "Done"].copy()
+                    if not done_items.empty:
+                        if "Release Date" not in done_items.columns: done_items["Release Date"] = "Unknown Date"
+                        if "Version" not in done_items.columns: done_items["Version"] = ""
 
-                    for r_date in recent_dates:
-                        group = done_items[done_items["Release Date"] == r_date]
-                        render_release_group(group, r_date)
-                    
-                    if len(older_dates) > 0:
-                        with st.expander("🕰️ View Older Updates"):
-                            for o_date in older_dates:
-                                group = done_items[done_items["Release Date"] == o_date]
-                                render_release_group(group, o_date)
+                        done_items["Release Date"] = done_items["Release Date"].fillna("Unknown Date").replace("", "Unknown Date")
+                        done_items["Version"] = done_items["Version"].fillna("").replace("nan", "")
+
+                        # 🟢 THE FIX: Only show items with Release Date today or in the past
+                        today = str(datetime.date.today())
+                        try:
+                            done_items["Release Date"] = pd.to_datetime(done_items["Release Date"], errors="coerce")
+                            today_date = pd.to_datetime(today)
+                            done_items = done_items[done_items["Release Date"] <= today_date]
+                            done_items["Release Date"] = done_items["Release Date"].dt.strftime("%Y-%m-%d")
+                        except Exception:
+                            pass
+
+                        if not done_items.empty:
+                            done_items = done_items.sort_values(by="Release Date", ascending=False)
+
+                            unique_dates = done_items["Release Date"].unique()
+                            recent_dates = unique_dates[:3]
+                            older_dates = unique_dates[3:]
+
+                            def render_release_group(group_df, date_str):
+                                v_string = group_df["Version"].iloc[0] if "Version" in group_df.columns and str(group_df["Version"].iloc[0]).strip() != "" else ""
+                                header_ext = f" | v{v_string}" if v_string else ""
+                                st.markdown(f"### 🚀 Update: {date_str}{header_ext}")
+
+                                for _, row in group_df.iterrows():
+                                    task = row.get("Task / Feature", row.get("Task", row.get("Feature", ""))) or "System Update"
+                                    category = str(row.get("Category", "General")).strip()
+                                    cat_lower = category.lower()
+
+                                    if "bug" in cat_lower or "fix" in cat_lower: emoji = "🐛"
+                                    elif "ui" in cat_lower or "design" in cat_lower or "clean" in cat_lower: emoji = "🎨"
+                                    elif "integrat" in cat_lower or "api" in cat_lower or "garmin" in cat_lower: emoji = "🔌"
+                                    elif "feature" in cat_lower or "new" in cat_lower: emoji = "✨"
+                                    else: emoji = "📌"
+
+                                    public_msg = row.get("Public Message", "")
+                                    if pd.isna(public_msg) or str(public_msg).strip() == "":
+                                        public_msg = "Under-the-hood improvements and bug fixes."
+
+                                    st.markdown(f"**{emoji} [{category}] {task}**")
+                                    st.caption(f"&emsp; *{public_msg}*")
+                                    st.write("")
+                                st.divider()
+
+                            for r_date in recent_dates:
+                                group = done_items[done_items["Release Date"] == r_date]
+                                render_release_group(group, r_date)
+
+                            if len(older_dates) > 0:
+                                with st.expander("🕰️ View Older Updates"):
+                                    for o_date in older_dates:
+                                        group = done_items[done_items["Release Date"] == o_date]
+                                        render_release_group(group, o_date)
+                        else:
+                            st.info("No released updates yet. Updates are coming soon!")
+                    else:
+                        st.info("No completed features in the backlog yet. Updates are coming soon!")
                 else:
-                    st.info("No completed features in the backlog yet. Updates are coming soon!")
-            else:
-                st.warning("Could not find the 'Status' column in the backlog.")
-        except Exception as e:
-            st.error("Could not load the changelog at this time.")
+                    st.warning("Could not find the 'Status' column in the backlog.")
+            except Exception as e:
+                st.error("Could not load the changelog at this time.")
 
     # ==========================================
     # TAB 6: 🛠️ ADMIN PANEL (DEVELOPERS ONLY)
