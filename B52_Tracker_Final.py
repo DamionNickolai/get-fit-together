@@ -5,7 +5,7 @@ import pandas as pd
 import datetime
 import plotly.express as px
 import hashlib # 🟢 Added for secure mobile tokens
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 # Must be the very first Streamlit command
 st.set_page_config(
@@ -162,22 +162,30 @@ if check_password():
     else:
         conn = st.connection("gsheets_prod", type=GSheetsConnection)
 
-    # 🟢 The Title UI (This stays tied to your role so you get your developer greeting!)
-    if role == "developer":
-        st.title(f"💪 Developer Session: {user}")
+    # 🟢 THE FIX: The Title UI now checks both your role AND your environment!
+    is_local_env = st.session_state.get("is_environment_local", False)
+
+    if role == "developer" and is_local_env:
+        st.title(f"💪 Developer Sandbox: {user}")
     else:
         st.title(f"💪 Get Fit Together: {user}'s Session")
 
     # 🟢 THE READ-ONLY LOCK FLAG
     database_locked = False
-
+    
     try:
-        log_df = conn.read(ttl=600)
+        # 🟢 THE FIX: If we just wrote new data, bypass the 10-minute cache!
+        if st.session_state.get("force_db_refresh", False):
+            log_df = conn.read(ttl=0) 
+            st.session_state["force_db_refresh"] = False # Reset the flag
+        else:
+            log_df = conn.read(ttl=600)
+            
         if not log_df.empty:
             log_df['Date'] = log_df['Date'].astype(str)
     except Exception as db_err:
         print(f"⚠️ DATABASE READ FAILED: {db_err}")
-        database_locked = True # Engages the safety lock
+        database_locked = True 
         log_df = pd.DataFrame(columns=["User", "Date", "Activity", "Body Weight", "Details"])
         st.error("⚠️ Cloud Database Sync Failed. The app is in Read-Only mode to protect your data. Please refresh.")
 
@@ -443,14 +451,17 @@ if check_password():
 
             history_list = daily_metrics.get("Weight_History", [])
 
-            # 🟢 Only auto-sync if the database is securely connected
+            # 🟢 THE FIX: Lock the auto-sync so it only runs ONCE per session!
             if history_list and not database_locked:
-                check_and_bulk_log_garmin_weight(
-                    conn_history=conn,
-                    df_history=log_df,
-                    user_name=user,
-                    weight_history_list=history_list
-                )
+                if not st.session_state.get("garmin_auto_synced", False):
+                    check_and_bulk_log_garmin_weight(
+                        conn_history=conn,
+                        df_history=log_df,
+                        user_name=user,
+                        weight_history_list=history_list
+                    )
+                    st.session_state["garmin_auto_synced"] = True
+                    st.session_state["force_db_refresh"] = True # Forces fresh read on next run
         else:
             # 🟢 NEW: Accurately reports Standby vs Missing status
             garmin_status = "dev_standby" if (is_dev_sandbox and client_key not in st.session_state) else "missing_secrets"
@@ -786,34 +797,40 @@ if check_password():
         elif not user_details.strip() and "Outdoor" not in final_details:
             st.sidebar.warning("Please add some workout details before submitting!")
         else:
-            try:
-                body_weight = float(weight_input) if weight_input.strip() else 0.0
-            except ValueError:
-                st.sidebar.error("❌ Body Weight must be a valid number (e.g., 180.5)")
-                body_weight = None
+            with st.spinner("Syncing to cloud master sheets..."):
+                try:
+                    # 🟢 BULLETPROOF FLOAT CONVERSION
+                    # We check for empty strings, None values, and format errors
+                    if weight_input == "" or weight_input is None:
+                        final_weight = 0.0
+                    else:
+                        try:
+                            final_weight = float(weight_input)
+                        except:
+                            final_weight = 0.0
 
-            if body_weight is not None:
-                with st.spinner("Syncing to cloud master sheets..."):
-                    try:
-                        new_log = {
-                            "User": user,
-                            "Date": str(date_input),
-                            "Activity": activity_value,
-                            "Body Weight": body_weight,
-                            "Details": final_details
-                        }
-                        new_row_df = pd.DataFrame([new_log])
-                        log_df = pd.concat([log_df, new_row_df], ignore_index=True)
-                        conn.update(data=log_df)
-                        st.cache_data.clear()
-
-                        # Force the auto-clear ghost ID to cycle
-                        st.session_state["form_reset"] += 1
-
-                        st.sidebar.success("🔥 Activity Successfully Logged!")
-                        st.rerun()
-                    except Exception as log_err:
-                        st.sidebar.error(f"Failed to log entry: {log_err}")
+                    new_log = {
+                        "User": user,
+                        "Date": str(date_input),
+                        "Activity": activity_value,
+                        "Body Weight": final_weight, # Guaranteed to be a safe number!
+                        "Details": final_details
+                    }
+                    
+                    new_row_df = pd.DataFrame([new_log])
+                    log_df = pd.concat([log_df, new_row_df], ignore_index=True)
+                    conn.update(data=log_df)
+                    
+                    # Trigger the cache bypass instead of a global wipe
+                    st.session_state["force_db_refresh"] = True
+                    
+                    # Force the auto-clear ghost ID to cycle
+                    st.session_state["form_reset"] += 1
+                    
+                    st.sidebar.success("🔥 Activity Successfully Logged!")
+                    st.rerun()
+                except Exception as log_err:
+                    st.sidebar.error(f"Failed to log entry: {log_err}")
     
     # ==========================================
     # ⚙️ SIDEBAR UTILITY FOOTER 
@@ -868,7 +885,6 @@ if check_password():
                             updated_backlog = pd.concat([df_backlog, new_ticket_df], ignore_index=True)
                             
                             conn_backlog.update(data=updated_backlog)
-                            st.cache_data.clear()
                             st.success("✅ Sent! Thanks for the feedback.")
                         except Exception as bug_err:
                             st.error(f"Failed to send: {bug_err}")
@@ -1092,7 +1108,6 @@ if check_password():
                         other_users_df = log_df[log_df["User"] != user]
                         final_df = pd.concat([other_users_df, edited_df], ignore_index=True)
                         conn.update(data=final_df)
-                        st.cache_data.clear()
                         st.success("Google Sheet Updated!")
                         st.rerun()
             else:
@@ -1187,9 +1202,24 @@ if check_password():
             try:
                 conn_backlog = st.connection("gsheets_backlog", type=GSheetsConnection)
                 
-                # 🟢 FIX 1: Force a fresh read every time (ttl=0)
-                df_backlog = conn_backlog.read(ttl=0) 
+                # --- NEW CACHING LOGIC STARTS HERE ---
+                col_head1, col_head2 = st.columns([4, 1])
+                with col_head1:
+                    st.write("Manage Active App Backlog & QoL Features:")
+                with col_head2:
+                    # Manual refresh button for the developer
+                    if st.button("🔄 Refresh Data", use_container_width=True):
+                        st.session_state["force_admin_refresh"] = True
                 
+                # Check if we need a fresh read, otherwise use the 10-minute cache
+                if st.session_state.get("force_admin_refresh", False):
+                    df_backlog = conn_backlog.read(ttl=0) 
+                    st.session_state["force_admin_refresh"] = False # Reset flag
+                else:
+                    df_backlog = conn_backlog.read(ttl=600)
+                # --- NEW CACHING LOGIC ENDS HERE ---
+                
+                # --- KEEP EVERYTHING BELOW EXACTLY AS YOU HAD IT ---
                 for col in ["Public Message", "Release Date", "Version"]:
                     if col not in df_backlog.columns: df_backlog[col] = ""
                     df_backlog[col] = df_backlog[col].astype(str).replace("nan", "")
@@ -1201,7 +1231,7 @@ if check_password():
                 else:
                     df_display = df_backlog
                 
-                st.write("Manage Active App Backlog & QoL Features:")
+                # 🛑 KEEP THIS: This is your interactive table!
                 edited_backlog = st.data_editor(
                     df_display, num_rows="dynamic", width="stretch", key="admin_backlog_editor",
                     column_config={
@@ -1237,12 +1267,15 @@ if check_password():
                         
                     conn_backlog.update(data=final_df_to_push)
                     st.success(f"✅ Version {push_version} successfully synced to the cloud!")
-                    st.cache_data.clear()
-                    
+                                        
                     # 🟢 FIX 2: Wipe the editor's ghost memory before the rerun!
                     if "admin_backlog_editor" in st.session_state:
                         del st.session_state["admin_backlog_editor"]
+                    
+                    # --- NEW: Force a refresh so the UI updates ---
+                    st.session_state["force_admin_refresh"] = True 
                         
                     st.rerun()
+
             except Exception as e:
                 st.error(f"Failed to load the backlog. System Error: {e}")
