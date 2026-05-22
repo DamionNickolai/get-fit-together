@@ -17,11 +17,11 @@ else:
 
 # 1. BUMP VERSION (Only if a version number was provided)
 if new_version:
-    print(f"🔄 Bumping B52_Tracker_Final.py to version {new_version}...")
-    with open('B52_Tracker_Final.py', 'r', encoding='utf-8') as file:
+    print(f"🔄 Bumping get_fit_together.py to version {new_version}...")
+    with open('get_fit_together.py', 'r', encoding='utf-8') as file:
         lines = file.readlines()
 
-    with open('B52_Tracker_Final.py', 'w', encoding='utf-8') as file:
+    with open('get_fit_together.py', 'w', encoding='utf-8') as file:
         for line in lines:
             if line.startswith('APP_VERSION ='):
                 file.write(f'APP_VERSION = "{new_version}"\n')
@@ -31,10 +31,20 @@ if new_version:
 else:
     print("⏭️ No version bump requested. Skipping straight to deployment...")
 
-# 2. EXECUTE GIT COMMANDS
-print("🚀 Packaging and pushing to GitHub...")
+# 2. THE MULTI-BRANCH GIT DANCE
+print("🚀 Packaging code on the DEV branch...")
 subprocess.run(["git", "add", "."])
 subprocess.run(["git", "commit", "-m", commit_msg])
-subprocess.run(["git", "push", "origin", "main"])
+subprocess.run(["git", "push", "origin", "dev"]) # Backs up your dev branch
 
-print("🎉 Successfully deployed to production!")
+print("🔀 Merging DEV into MAIN...")
+subprocess.run(["git", "checkout", "main"])
+subprocess.run(["git", "merge", "dev"])
+
+print("☁️ Pushing MAIN to Production...")
+subprocess.run(["git", "push", "origin", "main"]) # Triggers your live app update
+
+print("🔙 Returning back to DEV branch...")
+subprocess.run(["git", "checkout", "dev"])
+
+print(f"🎉 Successfully deployed! Your workspace is ready for the next feature.")
