@@ -3,23 +3,9 @@ import streamlit as st
 import pandas as pd
 import datetime
 import plotly.express as px
-import hashlib # 🟢 Added for secure mobile tokens
-# 🟢 AUTOMATED VERSIONING: Pull the latest version from Supabase into memory
-if "APP_VERSION" not in st.session_state:
-    try:
-        # Ask Supabase for the single most recent 'Done' version
-        version_response = supabase.table("backlog").select("version").eq("status", "Done").order("release_date", desc=True).limit(1).execute()
-        
-        if version_response.data and version_response.data[0].get("version"):
-            st.session_state["APP_VERSION"] = version_response.data[0]["version"]
-        else:
-            st.session_state["APP_VERSION"] = "1.0.0" # Fallback if the database is empty
-    except Exception:
-        st.session_state["APP_VERSION"] = "1.0.0"
+import hashlib 
 
-APP_VERSION = st.session_state["APP_VERSION"]
-
-# Must be the very first Streamlit command
+# 🛑 1. PAGE CONFIG MUST BE FIRST
 st.set_page_config(
     page_title="Get Fit Together",
     page_icon="💪",
@@ -27,6 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# 🛑 2. IMPORT CUSTOM MODULES
 # 🟢 Bring in the login module!
 from auth import check_password
 
@@ -35,6 +22,22 @@ from database import check_and_bulk_log_garmin_weight, check_and_autolog_garmin_
 
 # 🟢 Bring in the static workout database!
 from workouts import ROUTINES
+
+# 🟢 3. AUTOMATED VERSIONING
+if "APP_VERSION" not in st.session_state:
+    try:
+        # Ask Supabase for the single most recent 'Done' version
+        version_response = supabase.table("backlog").select("version").eq("status", "Done").order("release_date", desc=True).limit(1).execute()
+        
+        if version_response.data and version_response.data[0].get("version"):
+            st.session_state["APP_VERSION"] = version_response.data[0]["version"]
+        else:
+            st.session_state["APP_VERSION"] = "1.0.0" 
+    except Exception as e:
+        print(f"Versioning Error: {e}") 
+        st.session_state["APP_VERSION"] = "1.0.0"
+
+APP_VERSION = st.session_state["APP_VERSION"]
 
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
 if check_password():
