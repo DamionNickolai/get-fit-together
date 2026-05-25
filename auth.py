@@ -1,96 +1,91 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+from supabase import create_client
 import hashlib
 
 def check_password():
-    """Returns `True` if the user had a correct password or magic link."""
+    """Returns `True` if the user has a valid password or secure URL token."""
+
+    # --- 1. MAGIC LINK / URL TOKEN CHECKER ---
+    # Look for saved bookmarks containing ?user=...&auth=...
+    query_params = st.query_params
+    url_user = query_params.get("user")
+    url_token = query_params.get("auth")
+
+    def perform_login(username, raw_password=None, url_hash=None):
+        """Core login logic handling both manual passwords and URL hashes."""
+        try:
+            # Connect using the secure Service Key
+            supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_SERVICE_KEY"])
+            response = supabase.table("users").select("*").ilike("username", username).execute()
+            
+            if response.data:
+                db_pass = response.data[0]["password"]
+                # Generate a secure hash of the real password
+                db_hash = hashlib.sha256(db_pass.encode()).hexdigest()
+                
+                is_valid = False
+                # Check if they typed the right password OR if their URL hash matches
+                if raw_password and raw_password == db_pass:
+                    is_valid = True
+                elif url_hash and url_hash == db_hash:
+                    is_valid = True
+
+                if is_valid:
+                    st.session_state["password_correct"] = True
+                    st.session_state["logged_in_user"] = response.data[0]["username"]
+                    
+                    # Load all the custom styling from Supabase into memory
+                    user_data = response.data[0]
+                    st.session_state["user_role"] = user_data.get("role", "user")
+                    st.session_state["primary_color"] = user_data.get("primary_color", "#1E3A8A")
+                    st.session_state["sidebar_color"] = user_data.get("sidebar_color", "#162A61")
+                    st.session_state["line_color"] = user_data.get("line_color", "#60A5FA")
+                    st.session_state["garmin_prefix"] = user_data.get("garmin_prefix", username.lower())
+                    
+                    # 🟢 INJECT MAGIC LINK: Update the browser URL so they can bookmark it
+                    st.query_params["user"] = response.data[0]["username"]
+                    st.query_params["auth"] = db_hash
+                    return True
+        except Exception as e:
+            st.error(f"Database Connection Error: {e}")
+        return False
+
+    # 🟢 SILENT LOGIN: If they aren't logged in yet but have URL params, try the magic link
+    if not st.session_state.get("password_correct", False) and url_user and url_token:
+        if perform_login(username=url_user, url_hash=url_token):
+            return True # Magic link worked, bypass the screen!
+
+    # Return True if the user is already actively logged in
     if st.session_state.get("password_correct", False):
         return True
 
-    # Pull the user database from the 'Users' tab of the Backlog sheet
-    try:
-        conn_admin = st.connection("gsheets_backlog", type=GSheetsConnection)
-        users_df = conn_admin.read(worksheet="Users", ttl=600) 
-    except Exception as e:
-        st.error("⚠️ Unable to connect to the User Database.")
-        return False
-
-    url_token = st.query_params.get("auth", None)
-    url_user = st.query_params.get("user", None)
-
-    # 1. Check for the Magic URL Token (Mobile Bypass)
-    if url_token and url_user and not users_df.empty:
-        user_match = users_df[users_df["Username"] == url_user]
-        if not user_match.empty:
-            user_data = user_match.iloc[0]
-            correct_password = str(user_data["Password"])
-            expected_token = hashlib.sha256(f"{url_user}{correct_password}".encode()).hexdigest()[:20]
-            
-            if url_token == expected_token:
-                st.session_state["password_correct"] = True
-                st.session_state["logged_in_user"] = url_user
-                st.session_state["profile_data"] = user_data.to_dict() 
-                
-                host_header = st.context.headers.get("Host", "")
-                is_local = "streamlit" not in host_header.lower()
-                st.session_state["is_environment_local"] = is_local
-                
-                if user_data["Role"] == "developer" and is_local:
-                    st.session_state["user_role"] = "developer"
-                    st.session_state["logged_in_user"] = st.secrets["app_config"]["default_dev_workspace"]
-                else:
-                    st.session_state["user_role"] = user_data["Role"]
-                return True
-
-    # 2. Show the standard Login Form
-    with st.container():
-        st.subheader("🔒 Gym Access Portal")
+    # --- 2. THE UI: Restored and Cleaned Up ---
+    st.markdown("<h2 style='text-align: center;'>🔒 Gym Access Portal</h2>", unsafe_allow_html=True)
+    
+    def password_entered():
+        # Triggered when the user clicks 'Log In'
+        entered_username = st.session_state.get("username", "").strip()
+        entered_password = st.session_state.get("password", "")
         
-        with st.form("login_form", clear_on_submit=False):
-            typed_user = st.text_input("Profile Name", key="login_username", autocomplete="username").strip()
-            entered_pass = st.text_input("Password", type="password", key="login_password", autocomplete="current-password")
-            login_clicked = st.form_submit_button("🚀 Log In", type="primary", use_container_width=True)
-        
-        if login_clicked:
-            if not typed_user or not entered_pass:
-                st.warning("⚠️ Please fill in both fields.")
-                return False
-                
-            if users_df.empty:
-                st.error("Database is empty or failed to load.")
-                return False
-
-            user_match = users_df[users_df["Username"] == typed_user]
+        if perform_login(username=entered_username, raw_password=entered_password):
+            if "password" in st.session_state:
+                del st.session_state["password"] # Clear the password from memory for security
+        else:
+            # 🟢 This is the ONLY time we set it to False!
+            st.session_state["password_correct"] = False
             
-            if not user_match.empty:
-                user_data = user_match.iloc[0]
-                correct_password = str(user_data["Password"])
-                
-                if entered_pass == correct_password:
-                    st.session_state["password_correct"] = True
-                    st.session_state["profile_data"] = user_data.to_dict() 
-                    
-                    secure_token = hashlib.sha256(f"{typed_user}{correct_password}".encode()).hexdigest()[:20]
-                    st.query_params["user"] = typed_user
-                    st.query_params["auth"] = secure_token
-                    
-                    host_header = st.context.headers.get("Host", "")
-                    is_local = "streamlit" not in host_header.lower()
-                    st.session_state["is_environment_local"] = is_local
-                    
-                    if user_data["Role"] == "developer" and is_local:
-                        st.session_state["user_role"] = "developer"
-                        st.session_state["logged_in_user"] = st.secrets["app_config"]["default_dev_workspace"]
-                    else:
-                        st.session_state["user_role"] = user_data["Role"]
-                        st.session_state["logged_in_user"] = typed_user
-                        
-                    st.rerun()
-                else:
-                    st.error("😕 Access denied. Check your credentials.")
-                    return False
-            else:
-                st.error("😕 Access denied. Check your credentials.")
-                return False
-                
-        return False
+    # Wrap in a form to keep it grouped and allow 'Enter' to submit
+    col1, col2, col3 = st.columns([1, 2, 1]) 
+    with col2:
+        with st.form("login_form"):
+            # The autocomplete attributes tell Google Passwords exactly what these are
+            st.text_input("Username", key="username", autocomplete="username")
+            st.text_input("Password", type="password", key="password", autocomplete="current-password")
+            
+            st.form_submit_button("Log In", on_click=password_entered)
+
+        # It will only show this error if a login attempt actually failed
+        if "password_correct" in st.session_state and st.session_state["password_correct"] is False:
+            st.error("😕 User not known or password incorrect")
+        
+    return False

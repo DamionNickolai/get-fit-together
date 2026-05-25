@@ -1,11 +1,23 @@
 # --- 1. APP CONFIGURATION & IMPORTS ---
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import plotly.express as px
 import hashlib # 🟢 Added for secure mobile tokens
-APP_VERSION = "1.1.0"
+# 🟢 AUTOMATED VERSIONING: Pull the latest version from Supabase into memory
+if "APP_VERSION" not in st.session_state:
+    try:
+        # Ask Supabase for the single most recent 'Done' version
+        version_response = supabase.table("backlog").select("version").eq("status", "Done").order("release_date", desc=True).limit(1).execute()
+        
+        if version_response.data and version_response.data[0].get("version"):
+            st.session_state["APP_VERSION"] = version_response.data[0]["version"]
+        else:
+            st.session_state["APP_VERSION"] = "1.0.0" # Fallback if the database is empty
+    except Exception:
+        st.session_state["APP_VERSION"] = "1.0.0"
+
+APP_VERSION = st.session_state["APP_VERSION"]
 
 # Must be the very first Streamlit command
 st.set_page_config(
@@ -18,8 +30,8 @@ st.set_page_config(
 # 🟢 Bring in the login module!
 from auth import check_password
 
-# 🟢 Bring in the database automation helpers!
-from database import check_and_bulk_log_garmin_weight, check_and_autolog_garmin_weight
+# 🟢 Bring in the database automation helpers AND the Supabase client!
+from database import check_and_bulk_log_garmin_weight, check_and_autolog_garmin_weight, get_user_history_df, log_manual_entry, supabase
 
 # 🟢 Bring in the static workout database!
 from workouts import ROUTINES
@@ -30,13 +42,11 @@ if check_password():
     user = st.session_state["logged_in_user"]
     role = st.session_state["user_role"]
     
-    # 🟢 NEW: Pulls from the database dictionary we cached during login
-    current_profile = st.session_state.get("profile_data", {})
-    
-    # Mapped directly to your exact Google Sheets headers
-    page_bg_color = current_profile.get("Primary_Color", "#1F2937")
-    side_bg = current_profile.get("Sidebar_Color", "#111827")
-    chart_line_color = current_profile.get("Line_Color", "#34D399")
+    # 🟢 THE FIX: Pulls the individual variables exactly as auth.py saved them
+    page_bg_color = st.session_state.get("primary_color", "#1F2937")
+    side_bg = st.session_state.get("sidebar_color", "#111827")
+    chart_line_color = st.session_state.get("line_color", "#34D399")
+    g_prefix = st.session_state.get("garmin_prefix", "").lower()
 
     st.markdown(f"""
         <style>
@@ -49,31 +59,22 @@ if check_password():
     # 📡 THE BUG RADAR (Only alerts if you are the developer)
     if role == "developer":
         try:
-            # Quick read of the backlog to check for unresolved bugs
-            conn_radar = st.connection("gsheets_backlog", type=GSheetsConnection)
-            radar_df = conn_radar.read(ttl=600)
+            # 🟢 SUPABASE FIX: Direct query, no dataframes needed
+            radar_response = supabase.table("backlog").select("*").eq("category", "Bug").eq("status", "Backlog").execute()
+            bug_count = len(radar_response.data) if radar_response.data else 0
             
-            if not radar_df.empty and "Category" in radar_df.columns and "Status" in radar_df.columns:
-                # Count how many tickets are marked as Bug AND are still in the Backlog
-                active_bugs = radar_df[(radar_df["Category"] == "Bug") & (radar_df["Status"] == "Backlog")]
-                bug_count = len(active_bugs)
-                
-                if bug_count > 0:
-                    st.warning(f"🐞 **Developer Alert:** You have {bug_count} unresolved bug report(s) waiting in the Admin Panel.")
+            if bug_count > 0:
+                st.warning(f"🐞 **Developer Alert:** You have {bug_count} unresolved bug report(s) waiting in the Admin Panel.")
         except Exception:
             pass # Fails silently so it doesn't interrupt your workout logging
 
-    # --- 4. DUAL-ENVIRONMENT GOOGLE SHEETS ROUTER ---
-    # 🟢 THE FIX: Routing is now tied to the environment, NOT your role.
-    is_local_env = st.session_state.get("is_environment_local", False)
-    if is_local_env:
-        conn = st.connection("gsheets_dev", type=GSheetsConnection)
-        st.warning("🚧 DEV MODE ACTIVE: Connected to Workout Logs - DEV Sandbox")
-    else:
-        conn = st.connection("gsheets_prod", type=GSheetsConnection)
+    # --- 4. ENVIRONMENT & SUPABASE CONNECTION ---
+    # 🟢 THE FIX: We now pull the environment directly from your secrets.toml
+    env = st.secrets.get("app_config", {}).get("environment", "production")
+    is_local_env = (env == "local")
 
-    # 🟢 THE FIX: The Title UI now checks both your role AND your environment!
-    is_local_env = st.session_state.get("is_environment_local", False)
+    if is_local_env:
+        st.warning("🚧 DEV MODE ACTIVE: Connected to Supabase DEV Database")
 
     if role == "developer" and is_local_env:
         st.title(f"💪 Developer Sandbox: {user}")
@@ -84,33 +85,30 @@ if check_password():
     database_locked = False
     
     try:
-        # 🟢 THE FIX: If we just wrote new data, bypass the 10-minute cache!
-        if st.session_state.get("force_db_refresh", False):
-            log_df = conn.read(ttl=0) 
-            st.session_state["force_db_refresh"] = False # Reset the flag
-        else:
-            log_df = conn.read(ttl=600)
-            
+        # 🟢 THE FIX: Fetch directly from Supabase! No more Google Sheets here.
+        log_df = get_user_history_df(user)
+        
         if not log_df.empty:
             log_df['Date'] = log_df['Date'].astype(str)
+            # Ensure the User column exists for your downstream pandas logic
+            if 'User' not in log_df.columns:
+                log_df['User'] = user 
     except Exception as db_err:
         print(f"⚠️ DATABASE READ FAILED: {db_err}")
         database_locked = True 
         log_df = pd.DataFrame(columns=["User", "Date", "Activity", "Body Weight", "Details"])
         st.error("⚠️ Cloud Database Sync Failed. The app is in Read-Only mode to protect your data. Please refresh.")
-    
-    # 🟢 THE FIX: Define g_prefix safely outside the try block so it always exists!
-    g_prefix = current_profile.get("Garmin_Prefix", "unknown")
-
+        
     try:
-        from garminconnect import Garmin
+        from garminconnect import Garmin 
         from zoneinfo import ZoneInfo
         import datetime
-
+        
         tz = ZoneInfo("America/Chicago")
         today = datetime.datetime.now(tz).date().isoformat()
 
-        if st.session_state.get("is_environment_local", False):
+        # 🟢 THE FIX: Uses the new is_local_env variable we defined above
+        if is_local_env:
             garmin_section = "garmin_dev"
         else:
             garmin_section = "garmin_prod"
@@ -119,114 +117,86 @@ if check_password():
         g_email = st.secrets[garmin_section].get(f"{g_prefix}_email", "")
         g_pass  = st.secrets[garmin_section].get(f"{g_prefix}_pass", "")
 
-        # Session key for Garmin client
         client_key = f"live_garmin_client_{g_prefix}"
-
-        # Cache partition key (prevents cross-user data leaks)
         cache_id = f"{g_prefix}:{user}:{today}"
 
-        # 🟢 RESTORED: Put Garmin in Standby Mode to prevent API rate-limiting
-        is_dev_sandbox = (role == "developer" and st.session_state.get("is_environment_local", False))
-        connect_garmin_clicked = False
+        # 🟢 THE FIX: Use session_state to remember the button click across reruns
+        is_dev_sandbox = (role == "developer" and is_local_env)
         
-        # Only show the button if they are a dev, local, and haven't connected yet!
+        # Initialize the override flag if it doesn't exist
+        if "garmin_manual_override" not in st.session_state:
+            st.session_state["garmin_manual_override"] = False
+
         if is_dev_sandbox and client_key not in st.session_state:
             st.sidebar.info("🚧 Garmin API: Standby Mode")
-            connect_garmin_clicked = st.sidebar.button("🚀 Connect to Garmin", use_container_width=True)
+            # If clicked, permanently set the override to True for this session
+            if st.sidebar.button("🚀 Connect to Garmin", use_container_width=True):
+                st.session_state["garmin_manual_override"] = True
+                st.rerun() # Force an immediate rerun to catch the new True state
 
-        # Determine if we should pull the trigger on the API
         run_login_sequence = False
         if client_key not in st.session_state:
             if not is_dev_sandbox:
-                run_login_sequence = True # Auto-login for Production and normal Users
-            elif connect_garmin_clicked:
-                run_login_sequence = True # Manual override for the Developer
+                run_login_sequence = True 
+            elif st.session_state["garmin_manual_override"]: # Check the remembered state!
+                run_login_sequence = True
 
-        # Create Garmin client if the trigger was pulled
         if run_login_sequence:
             if g_email and g_pass:
                 with st.spinner("Establishing secure link to Garmin..."):
                     try:
-                        # 🚨 THE ANTI-FREEZE FIX & TERMINAL DEBUGGER
                         print(f"Attempting Garmin login for: {g_email}")
                         client_instance = Garmin(g_email, g_pass)
                         client_instance.login()
                         st.session_state[client_key] = client_instance
                         print("✅ Garmin login successful!")
                     except Exception as garmin_err:
-                        # Catches the freeze and forces the app to continue running
                         print(f"❌ GARMIN API ERROR: {garmin_err}")
                         st.session_state[client_key] = None 
                         st.sidebar.error(f"Garmin Sync Failed: {garmin_err}")
 
         active_client = st.session_state.get(client_key, None)
         
-        # 🟢 NEW: Import the Garmin data fetcher from your new module
         from garmin_api import fetch_garmin_data_layer
 
         if active_client:
             daily_metrics = fetch_garmin_data_layer(today, cache_id, active_client)
             garmin_status = "active"
-
             history_list = daily_metrics.get("Weight_History", [])
 
-            # 🟢 THE FIX: Lock the auto-sync so it only runs ONCE per session!
             if history_list and not database_locked:
                 if not st.session_state.get("garmin_auto_synced", False):
+                    # 🟢 THE FIX: Removed the old Google Sheets variables from this function call
                     check_and_bulk_log_garmin_weight(
-                        conn_history=conn,
-                        df_history=log_df,
                         user_name=user,
                         weight_history_list=history_list
                     )
                     st.session_state["garmin_auto_synced"] = True
-                    st.session_state["force_db_refresh"] = True # Forces fresh read on next run
+                    st.session_state["force_db_refresh"] = True 
         else:
-            # 🟢 NEW: Accurately reports Standby vs Missing status
             garmin_status = "dev_standby" if (is_dev_sandbox and client_key not in st.session_state) else "missing_secrets"
             daily_metrics = {
-                "Steps": "0",
-                "RHR": 60,
-                "Body Battery": 50,
-                "Stress": "--",
-                "Calories": "--",
-                "HRV": "--",
-                "Sleep Score": "--",
-                "Weight": 0.0,
-                "Weight Goal": "--",
-                "Weight_History": [],
+                "Steps": "0", "RHR": 60, "Body Battery": 50, "Stress": "--",
+                "Calories": "--", "HRV": "--", "Sleep Score": "--",
+                "Weight": 0.0, "Weight Goal": "--", "Weight_History": [],
                 "Raw": "No active client"
             }
 
     except KeyError as e:
         garmin_status = "missing_secrets"
         daily_metrics = {
-            "Steps": "0",
-            "RHR": 60,
-            "Body Battery": 50,
-            "Stress": "--",
-            "Calories": "--",
-            "HRV": "--",
-            "Sleep Score": "--",
-            "Weight": 0.0,
-            "Weight Goal": "--",
-            "Weight_History": [],
+            "Steps": "0", "RHR": 60, "Body Battery": 50, "Stress": "--",
+            "Calories": "--", "HRV": "--", "Sleep Score": "--",
+            "Weight": 0.0, "Weight Goal": "--", "Weight_History": [],
             "Raw": f"Outer Error: {e}"
         }
 
     except Exception as outer_e:
         garmin_status = "unknown_error"
         daily_metrics = {
-            "Steps": "0",
-            "RHR": 60,
-            "Body Battery": 50,
-            "Stress": "--",
-            "Calories": "--",
-            "HRV": "--",
-            "Sleep Score": "--",
-            "Weight": 0.0,
-            "Weight Goal": "--",
-            "Weight_History": [],
+            "Steps": "0", "RHR": 60, "Body Battery": 50, "Stress": "--",
+            "Calories": "--", "HRV": "--", "Sleep Score": "--",
+            "Weight": 0.0, "Weight Goal": "--", "Weight_History": [],
             "Raw": f"Outer Error: {outer_e}"
         }
 
@@ -393,10 +363,9 @@ if check_password():
         elif not user_details.strip() and "Outdoor" not in final_details:
             st.sidebar.warning("Please add some workout details before submitting!")
         else:
-            with st.spinner("Syncing to cloud master sheets..."):
+            with st.spinner("Syncing to Supabase Cloud..."):
                 try:
                     # 🟢 BULLETPROOF FLOAT CONVERSION
-                    # We check for empty strings, None values, and format errors
                     if weight_input == "" or weight_input is None:
                         final_weight = 0.0
                     else:
@@ -405,26 +374,28 @@ if check_password():
                         except:
                             final_weight = 0.0
 
-                    new_log = {
-                        "User": user,
-                        "Date": str(date_input),
-                        "Activity": activity_value,
-                        "Body Weight": final_weight, # Guaranteed to be a safe number!
-                        "Details": final_details
-                    }
+                    # 🟢 THE SUPABASE HANDOFF
+                    # We pass your variables directly to the new cloud function
+                    success = log_manual_entry(
+                        user_name=user, 
+                        log_date=date_input, 
+                        activity=activity_value, 
+                        body_weight=final_weight, 
+                        details=final_details
+                    )
                     
-                    new_row_df = pd.DataFrame([new_log])
-                    log_df = pd.concat([log_df, new_row_df], ignore_index=True)
-                    conn.update(data=log_df)
-                    
-                    # Trigger the cache bypass instead of a global wipe
-                    st.session_state["force_db_refresh"] = True
-                    
-                    # Force the auto-clear ghost ID to cycle
-                    st.session_state["form_reset"] += 1
-                    
-                    st.sidebar.success("🔥 Activity Successfully Logged!")
-                    st.rerun()
+                    if success:
+                        # Trigger the cache bypass so your UI updates instantly
+                        st.session_state["force_db_refresh"] = True
+                        
+                        # Force the auto-clear ghost ID to cycle
+                        st.session_state["form_reset"] += 1
+                        
+                        st.sidebar.success("🔥 Activity Successfully Logged to Cloud!")
+                        st.rerun()
+                    else:
+                        st.sidebar.error("❌ Failed to log entry. Check terminal for errors.")
+
                 except Exception as log_err:
                     st.sidebar.error(f"Failed to log entry: {log_err}")
     
@@ -461,26 +432,15 @@ if check_password():
                 else:
                     with st.spinner("Sending..."):
                         try:
-                            # Connect to your Admin Backlog sheet
-                            conn_backlog = st.connection("gsheets_backlog", type=GSheetsConnection)
-                            df_backlog = conn_backlog.read(ttl=0) # Force fresh read
+                            # 🟢 SUPABASE FIX: Instantly injects one row directly to the cloud
+                            supabase.table("backlog").insert({
+                                "status": "Backlog",
+                                "category": "Bug",
+                                "feature": f"User Report: {user}",
+                                "priority": "High",
+                                "notes": bug_text.strip()
+                            }).execute()
                             
-                            # Format it perfectly to match your Tab 6 Admin panel structure
-                            new_ticket = {
-                                "Status": "Backlog",
-                                "Category": "Bug",
-                                "Feature": f"User Report: {user}",
-                                "Priority": "High", 
-                                "Notes": bug_text.strip(), # Moves their complaint to the Notes column
-                                "Public Message": "",
-                                "Release Date": "",
-                                "Version": ""
-                            }
-                            
-                            new_ticket_df = pd.DataFrame([new_ticket])
-                            updated_backlog = pd.concat([df_backlog, new_ticket_df], ignore_index=True)
-                            
-                            conn_backlog.update(data=updated_backlog)
                             st.success("✅ Sent! Thanks for the feedback.")
                         except Exception as bug_err:
                             st.error(f"Failed to send: {bug_err}")
@@ -520,9 +480,8 @@ if check_password():
         "📋 History Log"
     ]
 
-    # 🟢 THE FIX: Only show What's New tab in production
-    if not is_local_env:
-        tab_titles.append("📢 What's New")
+    # 🟢 THE FIX: Always show What's New, so we can proofread in Dev
+    tab_titles.append("📢 What's New")
 
     # ONLY append the Admin tab if running locally AND you are a developer
     if role == "developer" and is_local_env:
@@ -541,11 +500,9 @@ if check_password():
     tab_changelog = None
     tab_admin = None
 
-    # Assign What's New tab only if it exists (production only)
-    tab_idx = 4
-    if not is_local_env:
-        tab_changelog = tabs[tab_idx]
-        tab_idx += 1
+    # Assign What's New tab (Always exists now)
+    tab_changelog = tabs[4]
+    tab_idx = 5
 
     # Assign Admin tab if developer and local
     if role == "developer" and is_local_env:
@@ -688,106 +645,128 @@ if check_password():
             user_history_df = log_df[log_df["User"] == user].sort_values(by="Date", ascending=False)
             if not user_history_df.empty:
                 
-                # 🟢 THE QoL FIX: Hides "User", and width commands removed to prevent crashes!
+                # 🟢 THE FIX: Re-enable the editor, but lock the text fields
                 edited_df = st.data_editor(
                     user_history_df, 
                     num_rows="dynamic", 
-                    disabled=["Date", "Activity", "Body Weight", "Details"], 
+                    disabled=["id", "Date", "Activity", "Body Weight", "Details"], 
                     column_config={
-                        "User": None  
+                        "id": None,    # Keep the ID hidden from the UI
+                        "User": None   # Keep the User hidden
                     },
                     key="log_editor"
                 )
                 
+                # 🟢 THE SUPABASE DELETION ENGINE
                 if len(edited_df) < len(user_history_df):
-                    if st.button("🔴 Confirm Deletion and Update Sheet", type="primary"):
-                        other_users_df = log_df[log_df["User"] != user]
-                        final_df = pd.concat([other_users_df, edited_df], ignore_index=True)
-                        conn.update(data=final_df)
-                        st.success("Google Sheet Updated!")
-                        st.rerun()
-            else:
-                st.info("No history found for this user.")
+                    if st.button("🔴 Confirm Deletion from Cloud Database", type="primary"):
+                        with st.spinner("Deleting..."):
+                            try:
+                                # 1. Figure out exactly which IDs were deleted from the UI
+                                original_ids = set(user_history_df['id'].dropna())
+                                remaining_ids = set(edited_df['id'].dropna())
+                                
+                                # 🟢 THE BULLETPROOF FIX: Force NumPy data types into standard Python Integers
+                                raw_deleted_ids = original_ids - remaining_ids
+                                deleted_ids = [int(float(x)) for x in raw_deleted_ids]
+                                
+                                if deleted_ids:
+                                    # 2. Grab the exact table name using the logic you already built
+                                    from database import get_target_table
+                                    target_table = get_target_table()
+                                    
+                                    # 3. Execute the delete command via Supabase API
+                                    response = supabase.table(target_table).delete().in_("id", deleted_ids).execute()
+                                    
+                                    # 4. Trigger the refresh loop
+                                    st.session_state["force_db_refresh"] = True
+                                    st.success(f"✅ {len(deleted_ids)} log(s) successfully deleted!")
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Deletion failed. System Error: {e}")
 
-   # ==========================================
-    # TAB 5: 📢 WHAT'S NEW (CHANGELOG) - PRODUCTION ONLY
+    # ==========================================
+    # TAB 5: 📢 WHAT'S NEW (CHANGELOG)
     # ==========================================
     if tab_changelog is not None:
         with tab_changelog:
             st.subheader("📢 What's New: Release Notes")
-            st.write("")
             try:
-                conn_changelog = st.connection("gsheets_backlog", type=GSheetsConnection)
-                df_changelog = conn_changelog.read(ttl=3600)
+                # 1. Fetch data from Supabase
+                response = supabase.table("backlog").select("*").eq("status", "Done").execute()
+                
+                if response.data:
+                    df = pd.DataFrame(response.data)
+                    
+                    # 2. Map Supabase names to UI names
+                    df = df.rename(columns={
+                        "feature": "Feature", "category": "Category", 
+                        "public_message": "Public Message", "release_date": "Release Date", 
+                        "version": "Version"
+                    })
+                    
+                    # 3. Clean columns
+                    for col in ["Release Date", "Version", "Public Message"]:
+                        if col not in df.columns: df[col] = ""
+                        df[col] = df[col].fillna("").astype(str)
 
-                if "Status" in df_changelog.columns:
-                    done_items = df_changelog[df_changelog["Status"] == "Done"].copy()
-                    if not done_items.empty:
-                        if "Release Date" not in done_items.columns: done_items["Release Date"] = "Unknown Date"
-                        if "Version" not in done_items.columns: done_items["Version"] = ""
+                    # 4. Process Dates
+                    df["Release Date"] = pd.to_datetime(df["Release Date"], errors="coerce")
+                    df["Release Date"] = df["Release Date"].fillna(pd.Timestamp("2000-01-01"))
+                    
+                    # 🟢 THE FIX: Sort by Date and Version, then extract unique Versions!
+                    df = df.sort_values(by=["Release Date", "Version"], ascending=[False, False])
+                    unique_versions = [v for v in df["Version"].unique() if v.strip() != ""]
+                    
+                    # 5. Split for the Hybrid Feed
+                    recent_versions = unique_versions[:3]
+                    older_versions = unique_versions[3:]
 
-                        done_items["Release Date"] = done_items["Release Date"].fillna("Unknown Date").replace("", "Unknown Date")
-                        done_items["Version"] = done_items["Version"].fillna("").replace("nan", "")
+                    # 6. Render the most recent 3 versions
+                    for v_val in recent_versions:
+                        # Group by Version instead of Date
+                        group = df[df["Version"] == v_val]
+                        
+                        # Grab the date associated with this specific version
+                        date_val = group["Release Date"].iloc[0]
+                        date_str = pd.to_datetime(date_val).strftime("%Y-%m-%d") if date_val > pd.Timestamp("2000-01-01") else "Archive"
+                        
+                        st.markdown(f"### 🚀 Update: {date_str} | v{v_val}")
+                        
+                        for _, row in group.iterrows():
+                            task = row.get("Feature", "System Update")
+                            category = str(row.get("Category", "General")).strip()
+                            emoji = "🐛" if "bug" in category.lower() else "✨"
+                            
+                            st.markdown(f"**{emoji} [{category}] {task}**")
+                            st.caption(f"&emsp; *{row['Public Message']}*")
+                            st.write("")
+                        st.divider()
 
-                        # 🟢 THE FIX: Only show items with Release Date today or in the past
-                        today = str(datetime.date.today())
-                        try:
-                            done_items["Release Date"] = pd.to_datetime(done_items["Release Date"], errors="coerce")
-                            today_date = pd.to_datetime(today)
-                            done_items = done_items[done_items["Release Date"] <= today_date]
-                            done_items["Release Date"] = done_items["Release Date"].dt.strftime("%Y-%m-%d")
-                        except Exception:
-                            pass
-
-                        if not done_items.empty:
-                            done_items = done_items.sort_values(by="Release Date", ascending=False)
-
-                            unique_dates = done_items["Release Date"].unique()
-                            recent_dates = unique_dates[:3]
-                            older_dates = unique_dates[3:]
-
-                            def render_release_group(group_df, date_str):
-                                v_string = group_df["Version"].iloc[0] if "Version" in group_df.columns and str(group_df["Version"].iloc[0]).strip() != "" else ""
-                                header_ext = f" | v{v_string}" if v_string else ""
-                                st.markdown(f"### 🚀 Update: {date_str}{header_ext}")
-
-                                for _, row in group_df.iterrows():
-                                    task = row.get("Task / Feature", row.get("Task", row.get("Feature", ""))) or "System Update"
+                    # 7. Render everything else in a dropdown
+                    if len(older_versions) > 0:
+                        with st.expander("🕰️ View Older Updates"):
+                            for v_val in older_versions:
+                                group = df[df["Version"] == v_val]
+                                
+                                date_val = group["Release Date"].iloc[0]
+                                date_str = pd.to_datetime(date_val).strftime("%Y-%m-%d") if date_val > pd.Timestamp("2000-01-01") else "Archive"
+                                
+                                st.markdown(f"### 🚀 Update: {date_str} | v{v_val}")
+                                
+                                for _, row in group.iterrows():
+                                    task = row.get("Feature", "System Update")
                                     category = str(row.get("Category", "General")).strip()
-                                    cat_lower = category.lower()
-
-                                    if "bug" in cat_lower or "fix" in cat_lower: emoji = "🐛"
-                                    elif "ui" in cat_lower or "design" in cat_lower or "clean" in cat_lower: emoji = "🎨"
-                                    elif "integrat" in cat_lower or "api" in cat_lower or "garmin" in cat_lower: emoji = "🔌"
-                                    elif "feature" in cat_lower or "new" in cat_lower: emoji = "✨"
-                                    else: emoji = "📌"
-
-                                    public_msg = row.get("Public Message", "")
-                                    if pd.isna(public_msg) or str(public_msg).strip() == "":
-                                        public_msg = "Under-the-hood improvements and bug fixes."
-
+                                    emoji = "🐛" if "bug" in category.lower() else "✨"
                                     st.markdown(f"**{emoji} [{category}] {task}**")
-                                    st.caption(f"&emsp; *{public_msg}*")
+                                    st.caption(f"&emsp; *{row['Public Message']}*")
                                     st.write("")
                                 st.divider()
 
-                            for r_date in recent_dates:
-                                group = done_items[done_items["Release Date"] == r_date]
-                                render_release_group(group, r_date)
-
-                            if len(older_dates) > 0:
-                                with st.expander("🕰️ View Older Updates"):
-                                    for o_date in older_dates:
-                                        group = done_items[done_items["Release Date"] == o_date]
-                                        render_release_group(group, o_date)
-                        else:
-                            st.info("No released updates yet. Updates are coming soon!")
-                    else:
-                        st.info("No completed features in the backlog yet. Updates are coming soon!")
                 else:
-                    st.warning("Could not find the 'Status' column in the backlog.")
+                    st.info("No released updates yet.")
             except Exception as e:
-                st.error("Could not load the changelog at this time.")
+                st.error(f"Could not load the changelog: {e}")
 
     # ==========================================
     # TAB 6: 🛠️ ADMIN PANEL (DEVELOPERS ONLY)
@@ -796,82 +775,104 @@ if check_password():
         with tab_admin:
             st.subheader("🛠️ Developer Admin Panel")
             try:
-                conn_backlog = st.connection("gsheets_backlog", type=GSheetsConnection)
-                
-                # --- NEW CACHING LOGIC STARTS HERE ---
                 col_head1, col_head2 = st.columns([4, 1])
                 with col_head1:
                     st.write("Manage Active App Backlog & QoL Features:")
                 with col_head2:
-                    # Manual refresh button for the developer
                     if st.button("🔄 Refresh Data", use_container_width=True):
                         st.session_state["force_admin_refresh"] = True
-                
-                # Check if we need a fresh read, otherwise use the 10-minute cache
-                if st.session_state.get("force_admin_refresh", False):
-                    df_backlog = conn_backlog.read(ttl=0) 
-                    st.session_state["force_admin_refresh"] = False # Reset flag
-                else:
-                    df_backlog = conn_backlog.read(ttl=600)
-                # --- NEW CACHING LOGIC ENDS HERE ---
-                
-                # --- KEEP EVERYTHING BELOW EXACTLY AS YOU HAD IT ---
-                for col in ["Public Message", "Release Date", "Version"]:
-                    if col not in df_backlog.columns: df_backlog[col] = ""
-                    df_backlog[col] = df_backlog[col].astype(str).replace("nan", "")
-                
-                if "Status" in df_backlog.columns:
-                    cols = ["Status"] + [col for col in df_backlog.columns if col != "Status"]
-                    df_backlog = df_backlog[cols]
-                    df_display = df_backlog[df_backlog["Status"] != "Done"]
-                else:
-                    df_display = df_backlog
-                
-                # 🛑 KEEP THIS: This is your interactive table!
-                edited_backlog = st.data_editor(
-                    df_display, num_rows="dynamic", width="stretch", key="admin_backlog_editor",
-                    column_config={
-                        "Status": st.column_config.SelectboxColumn("Status", width="medium", options=["Backlog", "In Progress", "Blocked", "Done"], required=True),
-                        "Public Message": st.column_config.TextColumn("Public Message", width="large"),
-                        "Release Date": st.column_config.TextColumn("Release Date", disabled=True),
-                        "Version": st.column_config.TextColumn("Version", disabled=True)
-                    }
-                )
-                
-                st.write("")
-                col_btn1, col_btn2 = st.columns([1, 4])
-                with col_btn1:
-                    push_version = st.text_input("Release Version", value=APP_VERSION)
-                with col_btn2:
-                    st.write("") 
-                    push_clicked = st.button("💾 Push Updates to Google Sheets", type="primary", width="stretch")
-                
-                if push_clicked:
-                    today_str = str(datetime.date.today())
-                    for col in ["Release Date", "Version"]:
-                        if col not in edited_backlog.columns: edited_backlog[col] = ""
-                    
-                    mask_done = edited_backlog["Status"] == "Done"
-                    edited_backlog.loc[mask_done & ((edited_backlog["Release Date"].isna()) | (edited_backlog["Release Date"] == "")), "Release Date"] = today_str
-                    edited_backlog.loc[mask_done & ((edited_backlog["Version"].isna()) | (edited_backlog["Version"] == "")), "Version"] = push_version
 
-                    if "Status" in df_backlog.columns:
-                        df_done_archived = df_backlog[df_backlog["Status"] == "Done"]
-                        final_df_to_push = pd.concat([edited_backlog, df_done_archived], ignore_index=True)
-                    else:
-                        final_df_to_push = edited_backlog
-                        
-                    conn_backlog.update(data=final_df_to_push)
-                    st.success(f"✅ Version {push_version} successfully synced to the cloud!")
-                                        
-                    # 🟢 FIX 2: Wipe the editor's ghost memory before the rerun!
-                    if "admin_backlog_editor" in st.session_state:
-                        del st.session_state["admin_backlog_editor"]
+                # Read the backlog table
+                response = supabase.table("backlog").select("*").order("id").execute()
+                
+                if response.data:
+                    df_backlog = pd.DataFrame(response.data)
                     
-                    # --- NEW: Force a refresh so the UI updates ---
-                    st.session_state["force_admin_refresh"] = True 
+                    # 🟢 LOAD FIX: Scrub any blanks from the cloud so Streamlit doesn't crash
+                    df_backlog = df_backlog.fillna("")
+                    
+                    # Rename for the UI Editor
+                    df_backlog = df_backlog.rename(columns={
+                        "status": "Status", "category": "Category", "feature": "Feature", 
+                        "priority": "Priority", "notes": "Notes", "public_message": "Public Message", 
+                        "release_date": "Release Date", "version": "Version"
+                    })
+
+                    # Hide 'Done' items from the active editor
+                    df_display = df_backlog[df_backlog["Status"] != "Done"]
+
+                    # 🛑 Interactive Table
+                    edited_backlog = st.data_editor(
+                        df_display, num_rows="dynamic", width="stretch", key="admin_backlog_editor",
+                        column_config={
+                            "id": None, # Hiding this is key!
+                            "Status": st.column_config.SelectboxColumn("Status", width="medium", options=["Backlog", "In Progress", "Blocked", "Done"], required=True),
+                            "Public Message": st.column_config.TextColumn("Public Message", width="large"),
+                            "Release Date": st.column_config.TextColumn("Release Date", disabled=True),
+                            "Version": st.column_config.TextColumn("Version", disabled=True)
+                        }
+                    )
+
+                    st.write("")
+                    col_btn1, col_btn2 = st.columns([1, 4])
+                    with col_btn1:
+                        push_version = st.text_input("Release Version", value=APP_VERSION)
+                    with col_btn2:
+                        st.write("") 
+                        push_clicked = st.button("💾 Push Updates to Cloud Database", type="primary", width="stretch")
+
+                    if push_clicked:
+                        today_str = str(datetime.date.today())
                         
-                    st.rerun()
+                        # 1. Identify which items were just moved to "Done" in the UI
+                        # We merge the current database state with your edits to catch the transition
+                        mask_done = edited_backlog["Status"] == "Done"
+                        
+                        # 2. Assign the version/date ONLY to these newly completed items
+                        edited_backlog.loc[mask_done & (edited_backlog["Release Date"] == ""), "Release Date"] = today_str
+                        edited_backlog.loc[mask_done & (edited_backlog["Version"] == ""), "Version"] = push_version
+
+                        # 3. Prepare the full payload
+                        # IMPORTANT: We need to include the already-completed items 
+                        # so we don't accidentally delete them!
+                        done_items = df_backlog[df_backlog["Status"] == "Done"]
+                        full_df_to_push = pd.concat([edited_backlog, done_items], ignore_index=True)
+
+                        upload_df = full_df_to_push.rename(columns={
+                            "Status": "status", "Category": "category", "Feature": "feature", 
+                            "Priority": "priority", "Notes": "notes", "Public Message": "public_message", 
+                            "Release Date": "release_date", "Version": "version"
+                        })
+                        
+                        # Scrub NaN values
+                        raw_records = upload_df.to_dict(orient="records")
+                        clean_records = []
+                        
+                        for record in raw_records:
+                            clean_row = {}
+                            for key, value in record.items():
+                                if pd.isna(value):
+                                    if key == "id": continue 
+                                    else: clean_row[key] = ""
+                                else:
+                                    clean_row[key] = value
+                            clean_records.append(clean_row)
+                        
+                        # Push to Supabase!
+                        supabase.table("backlog").upsert(clean_records).execute()
+                        
+                        st.success(f"✅ Version {push_version} successfully synced to Supabase!")
+                        
+                        # 🟢 AUTOMATED VERSIONING: Instantly update the live app version
+                        st.session_state["APP_VERSION"] = push_version
+                        
+                        if "admin_backlog_editor" in st.session_state:
+                            del st.session_state["admin_backlog_editor"]
+                        
+                        st.session_state["force_admin_refresh"] = True 
+                        st.rerun()
+                else:
+                    st.info("Backlog is empty. Add a ticket to get started!")
 
             except Exception as e:
                 st.error(f"Failed to load the backlog. System Error: {e}")
