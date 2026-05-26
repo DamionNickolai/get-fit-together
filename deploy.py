@@ -13,7 +13,12 @@ subprocess.run(["git", "add", "."])
 subprocess.run(["git", "commit", "-m", commit_msg])
 subprocess.run(["git", "push", "origin", "dev"]) 
 
-print("🔀 Merging DEV into MAIN...")
+print("\n☁️ PUSHED TO STAGING!")
+print("🌐 The Dev App is updating. Go test your changes now.")
+# 🟢 THE FIX: The script will completely freeze here until you press Enter
+input("🛑 Press [ENTER] when you have verified the Staging app and are ready to deploy to Production...")
+
+print("\n🔀 Merging DEV into MAIN...")
 subprocess.run(["git", "checkout", "main"])
 subprocess.run(["git", "merge", "dev"])
 
