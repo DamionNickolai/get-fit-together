@@ -16,7 +16,7 @@ quick save:
 Ctrl + s
 
 AUTO PUSH FROM LOCAL TO CLOUD (Change Message):
-python deploy.py "Versioning date data was loading incorrectly from the DB"
+python deploy.py "commit message"
 
 ENTER VIRTUAL ENV:
 .\venv\Scripts\activate
