@@ -102,105 +102,48 @@ if check_password():
         log_df = pd.DataFrame(columns=["User", "Date", "Activity", "Body Weight", "Details"])
         st.error("⚠️ Cloud Database Sync Failed. The app is in Read-Only mode to protect your data. Please refresh.")
         
+    # ==========================================
+    # 🟢 NEW GARMIN INITIALIZATION (STANDBY MODE)
+    # ==========================================
     try:
         from garminconnect import Garmin 
+        from garmin_api import fetch_garmin_data_layer
         from zoneinfo import ZoneInfo
         import datetime
         
         tz = ZoneInfo("America/Chicago")
         today = datetime.datetime.now(tz).date().isoformat()
 
-        # 🟢 THE FIX: Uses the new is_local_env variable we defined above
-        if is_local_env:
-            garmin_section = "garmin_dev"
-        else:
-            garmin_section = "garmin_prod"
+        garmin_section = "garmin_dev" if is_local_env else "garmin_prod"
 
         # Build identity keys using the safely defined prefix
         g_email = st.secrets[garmin_section].get(f"{g_prefix}_email", "")
         g_pass  = st.secrets[garmin_section].get(f"{g_prefix}_pass", "")
 
-        client_key = f"live_garmin_client_{g_prefix}"
         cache_id = f"{g_prefix}:{user}:{today}"
-
-        # 🟢 THE FIX: Use session_state to remember the button click across reruns
-        is_dev_sandbox = (role == "developer" and is_local_env)
         
-        # Initialize the override flag if it doesn't exist
-        if "garmin_manual_override" not in st.session_state:
-            st.session_state["garmin_manual_override"] = False
-
-        if is_dev_sandbox and client_key not in st.session_state:
-            st.sidebar.info("🚧 Garmin API: Standby Mode")
-            # If clicked, permanently set the override to True for this session
-            if st.sidebar.button("🚀 Connect to Garmin", use_container_width=True):
-                st.session_state["garmin_manual_override"] = True
-                st.rerun() # Force an immediate rerun to catch the new True state
-
-        run_login_sequence = False
-        if client_key not in st.session_state:
-            if not is_dev_sandbox:
-                run_login_sequence = True 
-            elif st.session_state["garmin_manual_override"]: # Check the remembered state!
-                run_login_sequence = True
-
-        if run_login_sequence:
-            if g_email and g_pass:
-                with st.spinner("Establishing secure link to Garmin..."):
-                    try:
-                        print(f"Attempting Garmin login for: {g_email}")
-                        client_instance = Garmin(g_email, g_pass)
-                        client_instance.login()
-                        st.session_state[client_key] = client_instance
-                        print("✅ Garmin login successful!")
-                    except Exception as garmin_err:
-                        print(f"❌ GARMIN API ERROR: {garmin_err}")
-                        st.session_state[client_key] = None 
-                        st.sidebar.error(f"Garmin Sync Failed: {garmin_err}")
-
-        active_client = st.session_state.get(client_key, None)
-        
-        from garmin_api import fetch_garmin_data_layer
-
-        if active_client:
-            daily_metrics = fetch_garmin_data_layer(today, cache_id, active_client)
-            garmin_status = "active"
-            history_list = daily_metrics.get("Weight_History", [])
-
-            if history_list and not database_locked:
-                if not st.session_state.get("garmin_auto_synced", False):
-                    # 🟢 THE FIX: Removed the old Google Sheets variables from this function call
-                    check_and_bulk_log_garmin_weight(
-                        user_name=user,
-                        weight_history_list=history_list
-                    )
-                    st.session_state["garmin_auto_synced"] = True
-                    st.session_state["force_db_refresh"] = True 
-        else:
-            garmin_status = "dev_standby" if (is_dev_sandbox and client_key not in st.session_state) else "missing_secrets"
-            daily_metrics = {
+        # Initialize default standby data (Fast Boot!)
+        if "garmin_status" not in st.session_state:
+            st.session_state["garmin_status"] = "Standby Mode"
+            
+        if "daily_metrics" not in st.session_state:
+            st.session_state["daily_metrics"] = {
                 "Steps": "0", "RHR": 60, "Body Battery": 50, "Stress": "--",
                 "Calories": "--", "HRV": "--", "Sleep Score": "--",
                 "Weight": 0.0, "Weight Goal": "--", "Weight_History": [],
-                "Raw": "No active client"
+                "Raw": "Standby Mode Active"
             }
+            
+        garmin_status = st.session_state["garmin_status"]
+        daily_metrics = st.session_state["daily_metrics"]
 
-    except KeyError as e:
+    except Exception as init_err:
         garmin_status = "missing_secrets"
         daily_metrics = {
             "Steps": "0", "RHR": 60, "Body Battery": 50, "Stress": "--",
             "Calories": "--", "HRV": "--", "Sleep Score": "--",
             "Weight": 0.0, "Weight Goal": "--", "Weight_History": [],
-            "Raw": f"Outer Error: {e}"
-        }
-
-    except Exception as outer_e:
-        garmin_status = "unknown_error"
-        daily_metrics = {
-            "Steps": "0", "RHR": 60, "Body Battery": 50, "Stress": "--",
-            "Calories": "--", "HRV": "--", "Sleep Score": "--",
-            "Weight": 0.0, "Weight Goal": "--", "Weight_History": [],
-            "Raw": f"Outer Error: {outer_e}"
+            "Raw": f"Init Error: {init_err}"
         }
 
     # --- 5. LOGGING SIDEBAR (Ultra-Clean Input Only) ---
@@ -456,14 +399,25 @@ if check_password():
             st.caption(f"**Connection Status:** `{garmin_status.upper()}`")
             st.caption(f"**Target Profile Prefix:** `{g_prefix}`")
             
-            if st.button("🧹 Clear Garmin Data Cache", use_container_width=True):
-                try:
-                    fetch_garmin_data_layer.clear()
-                    st.success("Garmin cache cleared!")
-                    st.rerun()
-                except Exception as cache_err:
-                    st.error(f"Cache clear failed: {cache_err}")
-                    
+            if st.button("🧹 Reset Garmin Session", use_container_width=True):
+                st.session_state["garmin_status"] = "Standby Mode"
+                st.session_state["daily_metrics"] = {
+                    "Steps": "0", "RHR": 60, "Body Battery": 50, "Stress": "--",
+                    "Calories": "--", "HRV": "--", "Sleep Score": "--",
+                    "Weight": 0.0, "Weight Goal": "--", "Weight_History": [],
+                    "Raw": "Session Reset"
+                }
+                
+                # Nuke the API cache if it's currently stored in memory
+                if "fetch_garmin_data_layer" in globals():
+                    try:
+                        fetch_garmin_data_layer.clear()
+                    except:
+                        pass
+                        
+                st.success("Session & Cache reset!")
+                st.rerun()
+                
             if "Raw" in daily_metrics:
                 st.text_area("Raw JSON Stream", value=daily_metrics["Raw"], height=150, disabled=True)
             else:
@@ -550,15 +504,54 @@ if check_password():
             """)
 
     # ------------------------------------------
-    # ⚡ TAB 2: DAILY VITALS
-    # ------------------------------------------
+    # ⚡ TAB 2: DAILY VITALS (ON DEMAND FIX)
+    # ------------------------------------------    
     with tab2:
         st.subheader("📊 Live Health & Readiness Dashboard")
         
-        # 1. Grab raw metrics
-        battery_raw = daily_metrics.get("Body Battery", 50)
-        stress_raw = daily_metrics.get("Stress", 25)
-        s_score = daily_metrics.get("Sleep Score", "--")
+        # 🟢 THE MANUAL GARMIN TRIGGER
+        with st.container(border=True):
+            col_g1, col_g2 = st.columns([3, 1], vertical_alignment="center")
+            
+            with col_g1:
+                status_color = "green" if st.session_state["garmin_status"] == "Active & Synced" else "orange"
+                st.markdown(f"**Garmin Connection Status:** :{status_color}[{st.session_state['garmin_status']}]")
+            
+            with col_g2:
+                if st.button("🚀 Fetch Latest Garmin Data", type="primary", use_container_width=True):
+                    with st.spinner("Establishing secure link to Garmin..."):
+                        try:
+                            # 1. Login
+                            client_instance = Garmin(g_email, g_pass)
+                            client_instance.login()
+                            
+                            # 2. Fetch Data
+                            fresh_metrics = fetch_garmin_data_layer(today, cache_id, client_instance)
+                            st.session_state["daily_metrics"] = fresh_metrics
+                            st.session_state["garmin_status"] = "Active & Synced"
+                            
+                            # 3. Sync Weight to DB
+                            history_list = fresh_metrics.get("Weight_History", [])
+                            if history_list and not database_locked:
+                                check_and_bulk_log_garmin_weight(
+                                    user_name=user,
+                                    weight_history_list=history_list
+                                )
+                                st.session_state["force_db_refresh"] = True 
+                                
+                            st.rerun() 
+                            
+                        except Exception as e:
+                            st.session_state["garmin_status"] = f"Error: {e}"
+                            st.rerun()
+
+        st.write("") # Quick Spacer
+        
+        # 1. Grab raw metrics from session memory
+        metrics = st.session_state["daily_metrics"]
+        battery_raw = metrics.get("Body Battery", 50)
+        stress_raw = metrics.get("Stress", 25)
+        s_score = metrics.get("Sleep Score", "--")
         
         # 2. Math Safety Fix (Prevents crashes if Garmin is disconnected)
         battery = int(battery_raw) if str(battery_raw).isdigit() else 50
@@ -578,7 +571,7 @@ if check_password():
         
         # If no manual logs exist, fall back to the Garmin Scale API
         if display_weight == 0.0:
-            display_weight = daily_metrics.get('Weight', 0.0)
+            display_weight = metrics.get('Weight', 0.0)
 
         # Dynamic Premium Background Coaching Banners
         if battery >= 75 and stress < 30:
@@ -607,15 +600,15 @@ if check_password():
         col1, col2, col3, col4 = st.columns(4)
         col5, col6, col7, col8 = st.columns(4)
 
-        col1.metric("Steps Tracked", daily_metrics.get("Steps", "0"))
-        col2.metric("Resting Heart Rate", f"{daily_metrics.get('RHR', 60)} bpm")
+        col1.metric("Steps Tracked", metrics.get("Steps", "0"))
+        col2.metric("Resting Heart Rate", f"{metrics.get('RHR', 60)} bpm")
         col3.metric("Body Battery", f"{battery}/100")
         col4.metric("Stress Index", f"{stress}/100")
         
         col5.metric("Sleep Score", f"{s_score} pts" if s_score != "--" else "—")
-        col6.metric("Total Daily Burn", f"{daily_metrics.get('Calories', '--')} kcal" if daily_metrics.get('Calories') != "--" else "—")
+        col6.metric("Total Daily Burn", f"{metrics.get('Calories', '--')} kcal" if metrics.get('Calories') != "--" else "—")
         col7.metric("Current Weight Scale", f"{display_weight} lbs" if display_weight > 0 else "—")
-        col8.metric("Garmin Weight Goal", daily_metrics.get("Weight Goal", "—"))
+        col8.metric("Garmin Weight Goal", metrics.get("Weight Goal", "—"))
 
     # ------------------------------------------
     # 📈 TAB 3: PROGRESS CHARTS

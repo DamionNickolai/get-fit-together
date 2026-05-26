@@ -1,0 +1,22 @@
+Run dev app:
+python -m streamlit run get_fit_together.py
+
+Change to dev env:
+git checkout dev
+git switch
+
+Change to main env:
+git checkout main
+git switch
+
+close dev app:
+Ctrl + c
+
+quick save:
+Ctrl + s
+
+AUTO PUSH FROM LOCAL TO CLOUD (Change Message):
+python deploy.py "Versioning date data was loading incorrectly from the DB"
+
+ENTER VIRTUAL ENV:
+.\venv\Scripts\activate
