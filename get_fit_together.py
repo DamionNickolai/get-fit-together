@@ -13,6 +13,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# 🟢 Add this near your other config variables
+BODYWEIGHT_ONLY_EXERCISES = ["Push-ups", "Push-ups (or modified on knees)", "Plank", "Suspended Planks", "Atomic Push-ups"]
+
 # 🛑 2. IMPORT CUSTOM MODULES
 # 🟢 Bring in the login module!
 from auth import check_password
@@ -151,7 +154,7 @@ if check_password():
     
     # 🟢 NEW PHASE SELECTION MAPPER
     # The user sees the short name, but Python uses the long name for the database
-    phase_options = ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Custom"]
+    phase_options = ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Daily Core", "TRX Suspension Mastery", "TRX Rip Trainer Power", "Open Gym"]
     selected_short_phase = st.sidebar.selectbox("Phase", options=phase_options, index=0)
     
     phase_map = {
@@ -159,7 +162,10 @@ if check_password():
         "Phase 2": "Phase 2: Hypertrophy (Muscle Building)",
         "Phase 3": "Phase 3: Strength & Power",
         "Phase 4": "Phase 4: Metabolic Conditioning",
-        "Custom": "Custom"
+        "Daily Core": "Daily Core",
+        "TRX Suspension Mastery": "TRX Suspension Mastery",
+        "TRX Rip Trainer Power": "TRX Rip Trainer Power",
+        "Open Gym": "Open Gym"
     }
     
     selected_q = phase_map[selected_short_phase]
@@ -170,30 +176,43 @@ if check_password():
     details_prefix = ""
     show_weight_box = False
     
-    if selected_q != "Custom":
+    # 🟢 List of phrases to OMIT from the Exercise/Activity dropdown
+    skip_phrases = [
+        "Cycle continuously", 
+        "20-Minute AMRAP Session", 
+        "resting only as needed"
+    ]
+    
+    if selected_q != "Open Gym":
         selected_w = st.sidebar.selectbox("Select Session", list(ROUTINES[selected_q]["Workouts"].keys()))
         
         if "Outdoor" in selected_w:
-            # 🟢 QoL FIX: Skip the dropdown entirely and set a standard database entry
             activity_value = "Outdoor Activity" 
             details_prefix = f"🌲 [{selected_q} - Outdoor] "
         else:
-            # 🟢 DYNAMIC EXERCISE GENERATOR
+            # 🟢 OPTIMIZED DYNAMIC EXERCISE GENERATOR
             raw_exercises = ROUTINES[selected_q]["Workouts"][selected_w]
-            
             clean_exercises = []
+            
             for ex in raw_exercises:
+                # 🟢 FILTER: Check if this line is an instructional sentence, not an exercise
+                if any(phrase in ex for phrase in skip_phrases):
+                    continue
+                
                 clean_name = ex.split(":")[0].strip()
                 if clean_name.startswith("- "): clean_name = clean_name[2:]
-                clean_exercises.append(clean_name)
+                clean_name = clean_name.lstrip("0123456789 ")
+                
+                if clean_name: # Only add if it's not an empty string
+                    clean_exercises.append(clean_name)
                 
             activity_value = st.sidebar.selectbox("Exercise / Activity", clean_exercises)
             short_w_name = selected_w.split(":")[0]
             details_prefix = f"🏋️ [{selected_q} - {short_w_name}] "
             
     else:
-        # 🟢 UPGRADED CUSTOM PHASE
-        custom_session = st.sidebar.selectbox("Session Type", ["Full Body Circuit", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching", "Body Weight Only"])
+        # 🟢 UPGRADED OPEN GYM PHASE
+        custom_session = st.sidebar.selectbox("Session Type", ["A La Carte", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching", "Body Weight Only"])
         
         if custom_session == "Body Weight Only":
             show_weight_box = True
@@ -201,7 +220,7 @@ if check_password():
             details_prefix = ""
         elif custom_session in ["Mountain Biking", "Hiking", "Walking", "Mobility / Stretching"]:
             activity_value = custom_session
-            details_prefix = f"📋 [Custom Phase] "
+            details_prefix = f"📋 [Open Gym] "
         else:
             master_exercises = []
             for q_key, q_data in ROUTINES.items():
@@ -209,7 +228,12 @@ if check_password():
                     if "Outdoor" not in w_key:
                         for ex in ex_list:
                             clean_name = ex.split(":")[0].strip()
-                            if clean_name.startswith("- "): clean_name = clean_name[2:]
+                            
+                            # The AMRAP / Bullet point cleaner
+                            if clean_name.startswith("- "): 
+                                clean_name = clean_name[2:]
+                                # 🟢 NEW: Strip any leading numbers and spaces for the A La Carte menu
+                                clean_name = clean_name.lstrip("0123456789 ")
                             
                             if clean_name not in master_exercises and "AMRAP" not in clean_name and "Cycle continuously" not in clean_name and "⏱️" not in clean_name:
                                 master_exercises.append(clean_name)
@@ -218,7 +242,7 @@ if check_password():
             master_exercises.append("Other (Specify in Notes)")
             
             activity_value = st.sidebar.selectbox("Exercise / Activity", master_exercises)
-            details_prefix = "🏋️ [Custom - Full Body Circuit] "
+            details_prefix = "🏋️ [Open Gym - A La Carte] "
 
     # 🟢 THE GHOST WIDGET FIX: Create a resetting ID counter
     if "form_reset" not in st.session_state:
@@ -232,7 +256,7 @@ if check_password():
         weight_input = ""
 
     # 3. 📝 STRUCTURED LIFT TRACKING
-    if selected_q == "Custom":
+    if selected_q == "Open Gym":
         non_lifting = ["Body Weight Only", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching"]
         show_lift_stats = custom_session not in non_lifting
     else:
@@ -261,34 +285,36 @@ if check_password():
                 </div>
                 """, unsafe_allow_html=True)
 
-        col_sets, col_reps, col_weight = st.sidebar.columns(3)
-        with col_sets:
+        # 🟢 DYNAMIC COLUMNS: Hide weight if it's bodyweight-only
+        is_bodyweight = activity_value in BODYWEIGHT_ONLY_EXERCISES
+        
+        # Only create 2 columns if bodyweight, 3 if weighted
+        cols = st.sidebar.columns(2 if is_bodyweight else 3)
+        
+        with cols[0]:
             input_sets = st.text_input("Sets", key=f"sets_{reset_id}")
-        with col_reps:
+        with cols[1]:
             input_reps = st.text_input("Reps", key=f"reps_{reset_id}")
-        with col_weight:
-            input_weight_lifted = st.text_input("Weight", key=f"wgt_{reset_id}")
+            
+        # Only show the third column if it's not a bodyweight movement
+        if not is_bodyweight:
+            with cols[2]:
+                input_weight_lifted = st.text_input("Weight", key=f"wgt_{reset_id}")
+        else:
+            input_weight_lifted = "0" # Force 0 for bodyweight exercises
 
-        if input_sets.strip() or input_reps.strip() or input_weight_lifted.strip():
+        # Logic to assemble the log string (Place this immediately after)
+        if input_sets.strip() or input_reps.strip() or (not is_bodyweight and input_weight_lifted.strip()):
             try:
                 sets_val = int(input_sets) if input_sets.strip() else 0
                 reps_val = int(input_reps) if input_reps.strip() else 0
                 weight_val = float(input_weight_lifted) if input_weight_lifted.strip() else 0.0
-                if sets_val > 0 or reps_val > 0 or weight_val > 0.0:
+                
+                # Format string differently if it's bodyweight
+                if is_bodyweight:
+                    structured_log = f"{sets_val} Sets | {reps_val} Reps "
+                else:
                     structured_log = f"{sets_val} Sets | {reps_val} Reps | {weight_val} lbs "
-            except ValueError:
-                pass
-
-    elif selected_q != "Custom" and "Outdoor" in selected_w:
-        # 🟢 THE NEW OUTDOOR DURATION TRACKER
-        st.sidebar.markdown("### ⏱️ Session Duration")
-        input_duration = st.sidebar.text_input("Duration (Minutes)", key=f"dur_{reset_id}")
-
-        if input_duration.strip():
-            try:
-                duration_val = int(input_duration)
-                if duration_val > 0:
-                    structured_log = f"⏱️ {duration_val} mins "
             except ValueError:
                 pass
 
@@ -472,8 +498,20 @@ if check_password():
         st.subheader("🗓️ 12-Month Periodized Roadmap")
         st.write("---")
         
-        # 🟢 THE FIX: Removed the active banner, and forced expanded=False for all cards
+        # 🟢 List the exact names of the routines you want at the BOTTOM of the page
+        # (Make sure these strings match the keys in your workouts.py perfectly!)
+        bottom_modules = [
+            "Daily Core", 
+            "TRX Suspension Mastery", 
+            "TRX Rip Trainer Power"
+        ]
+        
+        # 🟢 TOP SECTION: Render Phases 1-4
         for q_key, q_data in ROUTINES.items():
+            # Skip the bottom modules so they don't render up here
+            if q_key in bottom_modules:
+                continue 
+                
             with st.expander(f"📌 {q_key}", expanded=False):
                 st.markdown(f"🎯 **Macro Target:** *{q_data['Focus']}*")
                 st.write("---")
@@ -484,8 +522,13 @@ if check_password():
                     with cols[idx]:
                         st.markdown(f"✨ **{w_name.split(':')[0]}**")
                         st.caption(w_name.split(":")[-1].strip() if ":" in w_name else "")
+                        # Inside your rendering loop in Tab 1:
                         for ex in exercises:
-                            st.markdown(f"<div style='font-size: 13px; line-height: 1.4; margin-bottom: 4px;'>• {ex}</div>", unsafe_allow_html=True)
+                            # 🟢 Split the name from the reps (e.g., "Kettlebell Swings: 10 Reps")
+                            name = ex.split(":")[0].strip()
+                            reps = ex.split(":")[1].strip() if ":" in ex else ""
+                            
+                            st.markdown(f"<div style='font-size: 13px; line-height: 1.4; margin-bottom: 4px;'>• <b>{name}</b>: {reps}</div>", unsafe_allow_html=True)
                             
         # Weekly Baseline Calendar Flow Reference
         st.markdown("### 🌲 Weekly Cross-Training Architecture")
@@ -502,6 +545,29 @@ if check_password():
             * **Friday:** 🏋️ Workout C (Full Body / Circuit Integration)
             * **Saturday / Sunday:** 👨‍👩‍👧‍👦 Family Active Recovery & Full System Rest
             """)
+
+        # 🟢 BOTTOM SECTION: Render Core & TRX Systems
+        st.markdown("---")
+        st.subheader("🔄 Other Training Breakdowns")
+        
+        for module_key in bottom_modules:
+            # Verify the module actually exists in workouts.py before trying to render it
+            if module_key in ROUTINES:
+                module_data = ROUTINES[module_key]
+                with st.expander(f"📌 {module_key}", expanded=False):
+                    st.markdown(f"🎯 **Macro Target:** *{module_data['Focus']}*")
+                    st.write("---")
+                    
+                    # 🟢 Dynamically create the right amount of columns! 
+                    # (Core has 1 workout, TRX has 3. This handles both automatically)
+                    num_workouts = len(module_data["Workouts"])
+                    cols = st.columns(num_workouts)
+                    
+                    for idx, (w_name, exercises) in enumerate(module_data["Workouts"].items()):
+                        with cols[idx]:
+                            st.markdown(f"✨ **{w_name.split(':')[0]}**")
+                            for ex in exercises:
+                                st.markdown(f"<div style='font-size: 13px; line-height: 1.4; margin-bottom: 4px;'>• {ex}</div>", unsafe_allow_html=True)
 
     # ------------------------------------------
     # ⚡ TAB 2: DAILY VITALS (ON DEMAND FIX)

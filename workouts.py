@@ -100,18 +100,81 @@ ROUTINES = {
                 "Superset 2: Walking Lunges (10r/leg) + Goblet Squats (12r) [3 Rounds]",
                 "Superset 3: Cable Pull-throughs (15r) + Plank (60s) [3 Rounds]"
             ],
-            "Workout C:  & Bell AMRAP": [
-                "⏱️ 20-Minute AMRAP Session",
-                "Cycle continuously through:",
-                "- 10 Kettlebell Swings",
-                "- 10 Push-ups",
-                "- 10 Cable Face Pulls",
-                "- 10 Dumbbell Goblet Squats"
+            "Workout C: ⏱️ 20-Minute AMRAP Session": [
+            "Cycle continuously between the following exercises for 20 minutes, resting only as needed:",
+            "- Kettlebell Swings: 10 Reps",
+            "- Push-ups: 10 Reps",
+            "- Cable Face Pulls: 10 Reps",
+            "- Dumbbell Goblet Squats: 10 Reps"
             ],
             "Outdoor Integration": [
                 "Rucking Focus:",
                 "Hike with weighted vest or pack (45 mins)",
                 "1 Day of fast-paced continuous biking"
+            ]
+        }
+    },
+    "Daily Core": {
+        "Focus": "Efficient core circuit designed to tag onto your daily routine. Complete 3 rounds, resting 30-45s between.",
+        "Workouts": {
+            "Daily Core Circuit": [
+                "Cable Crunches (Cable System): 12 - 15 reps",
+                "Russian Twists (Kettlebell): 20 reps (10 per side)",
+                "Pallof Press (Resistance Band): 10 reps per side",
+                "Plank Pull-Throughs (Dumbbell): 10 - 12 reps",
+                "Weighted Dead Bugs (Two Dumbbells): 10 - 12 reps per side"
+            ]
+        }
+    },
+    "TRX Suspension Mastery": {
+        "Focus": "Total body functional strength, instability training, and deep core engagement. Rest: 45-60s.",
+        "Workouts": {
+            "Workout A: Suspension Upper Body": [
+                "TRX Chest Press (Straps Fully Lengthened): 3 sets x 12-15 reps",
+                "TRX Low Rows (Straps Fully Shortened): 3 sets x 12-15 reps",
+                "TRX Tricep Extensions (Mid-Length): 3 sets x 12 reps",
+                "TRX Bicep Curls (Mid-Length): 3 sets x 12 reps",
+                "TRX Y-Flys (Mid-Length): 3 sets x 10 reps"
+            ],
+            "Workout B: Suspension Lower Body": [
+                "TRX Pistol Squats (Mid-Length): 3 sets x 8 reps/leg",
+                "TRX Bulgarian Split Squats (Mid-Calf): 3 sets x 10 reps/leg",
+                "TRX Suspended Hamstring Curls (Mid-Calf): 3 sets x 15 reps",
+                "TRX Glute Bridges (Mid-Calf): 3 sets x 15 reps",
+                "TRX Jump Squats (Mid-Length): 3 sets x 15 reps"
+            ],
+            "Workout C: Deep Core & Stability Circuit": [
+                "TRX Atomic Push-ups (Mid-Calf): 3 sets x 10 reps",
+                "TRX Suspended Pikes (Mid-Calf): 3 sets x 12 reps",
+                "TRX Mountain Climbers (Mid-Calf): 3 sets x 30 seconds",
+                "TRX Suspended Planks (Mid-Calf): 3 sets x 60 seconds",
+                "TRX Side Planks (Feet in Cradles): 3 sets x 45 seconds/side"
+            ]
+        }
+    },
+    "TRX Rip Trainer Power": {
+        "Focus": "Anti-rotation, explosive rotational power, and asymmetric core stabilization. Rest: 60s.",
+        "Workouts": {
+            "Workout A: Rotational Core & Power": [
+                "TRX Rip Strike (Zone 1 Anchor): 3 sets x 10 reps/side",
+                "TRX Rip Pitchfork (Zone 1 Anchor): 3 sets x 10 reps/side",
+                "TRX Rip Sweep (Zone 1 Anchor): 3 sets x 12 reps/side",
+                "TRX Rip Torso Rotation (Zone 2 Anchor): 3 sets x 15 reps/side",
+                "TRX Rip Kayak (Zone 2 Anchor): 3 sets x 15 reps/side"
+            ],
+            "Workout B: Asymmetric Upper Body": [
+                "TRX Rip Chest Press (Zone 2 Anchor): 3 sets x 12 reps/side",
+                "TRX Rip Row (Zone 2 Anchor): 3 sets x 12 reps/side",
+                "TRX Rip Tricep Extension (Zone 2 Anchor): 3 sets x 12 reps/side",
+                "TRX Rip Bicep Curl (Zone 2 Anchor): 3 sets x 12 reps/side",
+                "TRX Rip Overhead Press (Zone 1 Anchor): 3 sets x 10 reps/side"
+            ],
+            "Workout C: Full Body Integration": [
+                "TRX Rip Squat Row (Zone 2 Anchor): 3 sets x 12 reps/side",
+                "TRX Rip Lunge Chest Press (Zone 2 Anchor): 3 sets x 10 reps/side",
+                "TRX Rip Jump Squat (Zone 2 Anchor): 3 sets x 10 reps/side",
+                "TRX Rip Windmill (Zone 1 Anchor): 3 sets x 12 reps/side",
+                "TRX Rip Drag (Zone 1 Anchor): 3 sets x 15 reps/side"
             ]
         }
     }
