@@ -26,21 +26,9 @@ from database import check_and_bulk_log_garmin_weight, check_and_autolog_garmin_
 # 🟢 Bring in the static workout database!
 from workouts import ROUTINES
 
-# 🟢 3. AUTOMATED VERSIONING
-if "APP_VERSION" not in st.session_state:
-    try:
-        # Ask Supabase for the single most recent 'Done' version
-        version_response = supabase.table("backlog").select("version").eq("status", "Done").order("release_date", desc=True).limit(1).execute()
-        
-        if version_response.data and version_response.data[0].get("version"):
-            st.session_state["APP_VERSION"] = version_response.data[0]["version"]
-        else:
-            st.session_state["APP_VERSION"] = "1.0.0" 
-    except Exception as e:
-        print(f"Versioning Error: {e}") 
-        st.session_state["APP_VERSION"] = "1.0.0"
-
-APP_VERSION = st.session_state["APP_VERSION"]
+# 🟢 3. APP VERSIONING
+APP_VERSION = "1.3.0"
+st.session_state["APP_VERSION"] = APP_VERSION
 
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
 if check_password():
@@ -780,14 +768,30 @@ if check_password():
                     df["Release Date"] = pd.to_datetime(df["Release Date"], errors="coerce")
                     df["Release Date"] = df["Release Date"].fillna(pd.Timestamp("2000-01-01"))
                     
-                    # 🟢 THE FIX: Sort by Date and Version, then extract unique Versions!
+                    # ==========================================
+                    # 🟢 THE FUTURE-PROOF VERSION FILTER
+                    # ==========================================
+                    def parse_version(v_str):
+                        """Converts '1.3.0' into (1, 3, 0) so Python can do math on it"""
+                        try:
+                            clean_v = str(v_str).lower().replace('v', '').strip()
+                            return tuple(map(int, clean_v.split('.')))
+                        except:
+                            return (0, 0, 0)
+
+                    current_app_v = parse_version(APP_VERSION)
+                    
+                    df = df[df["Version"].apply(parse_version) <= current_app_v]
+                    # ==========================================
+                    
+                    # Sort by Date and Version, then extract unique Versions!
                     df = df.sort_values(by=["Release Date", "Version"], ascending=[False, False])
                     unique_versions = [v for v in df["Version"].unique() if v.strip() != ""]
                     
-                    # 5. Split for the Hybrid Feed
+                    # 🟢 ADD THESE TWO LINES BACK IN (The Hybrid Feed Split)
                     recent_versions = unique_versions[:3]
                     older_versions = unique_versions[3:]
-
+                   
                     # 6. Render the most recent 3 versions
                     for v_val in recent_versions:
                         # Group by Version instead of Date
@@ -848,8 +852,8 @@ if check_password():
                     if st.button("🔄 Refresh Data", use_container_width=True):
                         st.session_state["force_admin_refresh"] = True
 
-                # Read the backlog table
-                response = supabase.table("backlog").select("*").order("id").execute()
+                # Read the active backlog table directly from Supabase
+                response = supabase.table("backlog").select("*").neq("status", "Done").order("id").execute()
                 
                 if response.data:
                     df_backlog = pd.DataFrame(response.data)
@@ -864,21 +868,16 @@ if check_password():
                         "release_date": "Release Date", "version": "Version"
                     })
 
-                    # Hide 'Done' items from the active editor
-                    df_display = df_backlog[df_backlog["Status"] != "Done"]
-                    
-                    # 🟢 THE SMOKING GUN FIX: Reset the index to a clean 0, 1, 2, 3 sequence
-                    df_display = df_display.reset_index(drop=True)
-
                     # 🛑 Interactive Table
+                    # 🟢 THE FIX: We pass df_backlog directly into the editor now! 
                     edited_backlog = st.data_editor(
-                        df_display, 
+                        df_backlog, 
                         num_rows="dynamic", 
                         width="stretch", 
                         key="admin_backlog_editor",
-                        hide_index=True,  # This will successfully work now!
+                        hide_index=True,  
                         column_config={
-                            "id": None, 
+                            "id": None, # Hiding this is key!
                             "Status": st.column_config.SelectboxColumn("Status", width="medium", options=["Backlog", "In Progress", "Blocked", "Done"], required=True),
                             "Public Message": st.column_config.TextColumn("Public Message", width="large"),
                             "Release Date": st.column_config.TextColumn("Release Date", disabled=True),
@@ -898,20 +897,14 @@ if check_password():
                         today_str = str(datetime.date.today())
                         
                         # 1. Identify which items were just moved to "Done" in the UI
-                        # We merge the current database state with your edits to catch the transition
                         mask_done = edited_backlog["Status"] == "Done"
                         
                         # 2. Assign the version/date ONLY to these newly completed items
                         edited_backlog.loc[mask_done & (edited_backlog["Release Date"] == ""), "Release Date"] = today_str
                         edited_backlog.loc[mask_done & (edited_backlog["Version"] == ""), "Version"] = push_version
 
-                        # 3. Prepare the full payload
-                        # IMPORTANT: We need to include the already-completed items 
-                        # so we don't accidentally delete them!
-                        done_items = df_backlog[df_backlog["Status"] == "Done"]
-                        full_df_to_push = pd.concat([edited_backlog, done_items], ignore_index=True)
-
-                        upload_df = full_df_to_push.rename(columns={
+                        # 3. Prepare the full payload directly from the editor
+                        upload_df = edited_backlog.rename(columns={
                             "Status": "status", "Category": "category", "Feature": "feature", 
                             "Priority": "priority", "Notes": "notes", "Public Message": "public_message", 
                             "Release Date": "release_date", "Version": "version"
