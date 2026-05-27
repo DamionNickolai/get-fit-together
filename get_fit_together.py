@@ -255,7 +255,7 @@ if check_password():
     else:
         weight_input = ""
 
-    # 3. 📝 STRUCTURED LIFT TRACKING
+    # 3. 📝 STRUCTURED LIFT TRACKING (Now with st.form!)
     if selected_q == "Open Gym":
         non_lifting = ["Body Weight Only", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching"]
         show_lift_stats = custom_session not in non_lifting
@@ -264,10 +264,10 @@ if check_password():
         
     structured_log = ""
 
+    # Keep the "Last Performed" memory outside the form so it displays dynamically
     if show_lift_stats:
         st.sidebar.markdown("### 📝 Lift Tracking Stats")
         
-        # The "Last Performed" Memory Query
         if not log_df.empty and "User" in log_df.columns and "Activity" in log_df.columns:
             past_logs = log_df[(log_df["User"] == user) & (log_df["Activity"] == activity_value)].copy()
             if not past_logs.empty:
@@ -285,32 +285,47 @@ if check_password():
                 </div>
                 """, unsafe_allow_html=True)
 
+    # 🚀 CREATE THE FORM HERE
+    with st.sidebar.form(key=f"activity_log_form_{reset_id}"):
+        
         # 🟢 DYNAMIC COLUMNS: Hide weight if it's bodyweight-only
         is_bodyweight = activity_value in BODYWEIGHT_ONLY_EXERCISES
         
-        # Only create 2 columns if bodyweight, 3 if weighted
-        cols = st.sidebar.columns(2 if is_bodyweight else 3)
-        
-        with cols[0]:
-            input_sets = st.text_input("Sets", key=f"sets_{reset_id}")
-        with cols[1]:
-            input_reps = st.text_input("Reps", key=f"reps_{reset_id}")
+        if show_lift_stats:
+            # Notice we use st.columns instead of st.sidebar.columns inside a form container
+            cols = st.columns(2 if is_bodyweight else 3) 
             
-        # Only show the third column if it's not a bodyweight movement
-        if not is_bodyweight:
-            with cols[2]:
-                input_weight_lifted = st.text_input("Weight", key=f"wgt_{reset_id}")
+            with cols[0]:
+                input_sets = st.text_input("Sets", key=f"sets_{reset_id}")
+            with cols[1]:
+                input_reps = st.text_input("Reps", key=f"reps_{reset_id}")
+                
+            if not is_bodyweight:
+                with cols[2]:
+                    input_weight_lifted = st.text_input("Weight", key=f"wgt_{reset_id}")
+            else:
+                input_weight_lifted = "0" # Force 0 for bodyweight exercises
         else:
-            input_weight_lifted = "0" # Force 0 for bodyweight exercises
+            # Set defaults if we aren't lifting
+            input_sets, input_reps, input_weight_lifted = "", "", ""
 
-        # Logic to assemble the log string (Place this immediately after)
+        # 4. 📝 UNIVERSAL NOTES BOX (Inside the form)
+        extra_notes = st.text_input("Notes / Explanation", placeholder="Optional: Provide any details...", key=f"notes_{reset_id}")
+
+        # 5. SUBMIT BUTTON (This replaces your previous st.sidebar.button)
+        submit_log = st.form_submit_button("💾 Log Activity", type="primary", use_container_width=True)
+
+
+    # 🔄 6. DATABASE SYNC LOGIC (Triggers only when the form is submitted)
+    if submit_log:
+        
+        # Build the structured string now that we have locked-in form data
         if input_sets.strip() or input_reps.strip() or (not is_bodyweight and input_weight_lifted.strip()):
             try:
                 sets_val = int(input_sets) if input_sets.strip() else 0
                 reps_val = int(input_reps) if input_reps.strip() else 0
                 weight_val = float(input_weight_lifted) if input_weight_lifted.strip() else 0.0
                 
-                # Format string differently if it's bodyweight
                 if is_bodyweight:
                     structured_log = f"{sets_val} Sets | {reps_val} Reps "
                 else:
@@ -318,18 +333,14 @@ if check_password():
             except ValueError:
                 pass
 
-    # 4. 📝 UNIVERSAL NOTES BOX
-    extra_notes = st.sidebar.text_input("Notes / Explanation", placeholder="Optional: Provide any details...", key=f"notes_{reset_id}")
+        if extra_notes.strip():
+            user_details = f"{structured_log}- {extra_notes.strip()}" if structured_log else extra_notes.strip()
+        else:
+            user_details = structured_log.strip()
+            
+        final_details = f"{details_prefix}{user_details}" if details_prefix else user_details
 
-    # 5. 🔄 STRING ASSEMBLY
-    if extra_notes.strip():
-        user_details = f"{structured_log}- {extra_notes.strip()}" if structured_log else extra_notes.strip()
-    else:
-        user_details = structured_log.strip()
-        
-    final_details = f"{details_prefix}{user_details}" if details_prefix else user_details
-
-    if st.sidebar.button("💾 Log Activity", type="primary", use_container_width=True):
+        # Database Check & Submission
         if database_locked:
             st.sidebar.error("Database connection is currently unstable. Please refresh the page so we don't overwrite your data.")
         elif not user_details.strip() and "Outdoor" not in final_details:
@@ -337,7 +348,6 @@ if check_password():
         else:
             with st.spinner("Syncing to Supabase Cloud..."):
                 try:
-                    # 🟢 BULLETPROOF FLOAT CONVERSION
                     if weight_input == "" or weight_input is None:
                         final_weight = 0.0
                     else:
@@ -346,8 +356,6 @@ if check_password():
                         except:
                             final_weight = 0.0
 
-                    # 🟢 THE SUPABASE HANDOFF
-                    # We pass your variables directly to the new cloud function
                     success = log_manual_entry(
                         user_name=user, 
                         log_date=date_input, 
@@ -357,12 +365,8 @@ if check_password():
                     )
                     
                     if success:
-                        # Trigger the cache bypass so your UI updates instantly
                         st.session_state["force_db_refresh"] = True
-                        
-                        # Force the auto-clear ghost ID to cycle
                         st.session_state["form_reset"] += 1
-                        
                         st.sidebar.success("🔥 Activity Successfully Logged to Cloud!")
                         st.rerun()
                     else:
@@ -862,12 +866,19 @@ if check_password():
 
                     # Hide 'Done' items from the active editor
                     df_display = df_backlog[df_backlog["Status"] != "Done"]
+                    
+                    # 🟢 THE SMOKING GUN FIX: Reset the index to a clean 0, 1, 2, 3 sequence
+                    df_display = df_display.reset_index(drop=True)
 
                     # 🛑 Interactive Table
                     edited_backlog = st.data_editor(
-                        df_display, num_rows="dynamic", width="stretch", key="admin_backlog_editor",
+                        df_display, 
+                        num_rows="dynamic", 
+                        width="stretch", 
+                        key="admin_backlog_editor",
+                        hide_index=True,  # This will successfully work now!
                         column_config={
-                            "id": None, # Hiding this is key!
+                            "id": None, 
                             "Status": st.column_config.SelectboxColumn("Status", width="medium", options=["Backlog", "In Progress", "Blocked", "Done"], required=True),
                             "Public Message": st.column_config.TextColumn("Public Message", width="large"),
                             "Release Date": st.column_config.TextColumn("Release Date", disabled=True),
@@ -906,33 +917,58 @@ if check_password():
                             "Release Date": "release_date", "Version": "version"
                         })
                         
-                        # Scrub NaN values
+                        # Scrub NaN values, Separate Updates from Inserts, and Fix Text Constraints
                         raw_records = upload_df.to_dict(orient="records")
-                        clean_records = []
+                        
+                        records_to_update = []
+                        records_to_insert = []
                         
                         for record in raw_records:
                             clean_row = {}
+                            has_valid_id = False
+                            
                             for key, value in record.items():
-                                if pd.isna(value):
-                                    if key == "id": continue 
-                                    else: clean_row[key] = ""
+                                if key == "id":
+                                    try:
+                                        clean_row[key] = int(float(value))
+                                        has_valid_id = True
+                                    except (ValueError, TypeError):
+                                        continue # Drop the ID completely for new rows
                                 else:
-                                    clean_row[key] = value
-                            clean_records.append(clean_row)
+                                    # Keep text columns as empty strings so we don't trip NOT NULL constraints
+                                    if pd.isna(value) or value is None or str(value).strip() in ["None", "nan"]:
+                                        clean_row[key] = ""
+                                    else:
+                                        clean_row[key] = value
+                                        
+                            # 🟢 THE GHOST ROW FIX: Only insert if they actually typed a feature name
+                            if has_valid_id:
+                                records_to_update.append(clean_row)
+                            else:
+                                if clean_row.get("feature"): # Requires at least a feature name to insert
+                                    records_to_insert.append(clean_row)
                         
-                        # Push to Supabase!
-                        supabase.table("backlog").upsert(clean_records).execute()
-                        
-                        st.success(f"✅ Version {push_version} successfully synced to Supabase!")
-                        
-                        # 🟢 AUTOMATED VERSIONING: Instantly update the live app version
-                        st.session_state["APP_VERSION"] = push_version
-                        
-                        if "admin_backlog_editor" in st.session_state:
-                            del st.session_state["admin_backlog_editor"]
-                        
-                        st.session_state["force_admin_refresh"] = True 
-                        st.rerun()
+                        # 🟢 THE DIAGNOSTIC PUSH
+                        try:
+                            if records_to_update:
+                                supabase.table("backlog").upsert(records_to_update).execute()
+                                
+                            if records_to_insert:
+                                supabase.table("backlog").insert(records_to_insert).execute()
+                                
+                            st.success(f"✅ Version {push_version} successfully synced to Supabase!")
+                            
+                            st.session_state["APP_VERSION"] = push_version
+                            
+                            if "admin_backlog_editor" in st.session_state:
+                                del st.session_state["admin_backlog_editor"]
+                            
+                            st.session_state["force_admin_refresh"] = True 
+                            st.rerun()
+                            
+                        except Exception as e:
+                            # If it fails now, it will tell us EXACTLY why on the screen!
+                            st.error(f"❌ Supabase rejected the payload: {e}")
                 else:
                     st.info("Backlog is empty. Add a ticket to get started!")
 
