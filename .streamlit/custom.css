@@ -1,40 +1,9 @@
-/* Hide Streamlit toolbar buttons while preserving sidebar toggle */
-
-/* Hide Share, Edit, GitHub, Favorite, and Hamburger menu buttons */
-header [data-testid="stToolbarActionButton"] {
+/* Hide the "Manage app" button using its exact data-testid */
+[data-testid="manage-app-button"] {
     display: none !important;
 }
 
-/* Hide the three-dot menu (hamburger) */
-header button[aria-label*="menu"],
-header button[aria-label*="Menu"] {
+/* Hide button using class selector as fallback */
+button[class*="_terminalButton"] {
     display: none !important;
-}
-
-/* Hide the "Manage app" button at the bottom */
-button:has-text("Manage app"),
-footer button,
-footer [data-testid*="manage"],
-footer [data-testid*="app"] {
-    display: none !important;
-}
-
-/* Alternative: Hide all secondary buttons in header except sidebar toggle */
-header button[kind="secondary"],
-header [data-testid="stActionButton"] {
-    display: none !important;
-}
-
-/* Ensure sidebar toggle remains visible */
-[data-testid="stSidebarCollapsedControl"] {
-    display: block !important;
-    visibility: visible !important;
-}
-
-/* Keep the sidebar toggle button visible at all times */
-button[aria-label*="collapse"],
-button[aria-label*="expand"],
-.sidebar-toggle {
-    display: block !important;
-    visibility: visible !important;
 }
