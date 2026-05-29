@@ -51,9 +51,24 @@ st.markdown("""
     header button[kind="secondary"] { display: none !important; }
     header button[aria-label*="menu"] { display: none !important; }
 
-    /* Hide the "Manage app" button at the bottom */
-    footer button { display: none !important; }
-    footer [data-testid*="manage"] { display: none !important; }
+    /* Make the header bar transparent */
+    header { background-color: transparent !important; }
+    header > div { background-color: transparent !important; }
+
+    /* Hide the "Manage app" button at the bottom - target by text content */
+    footer button,
+    footer [data-testid*="manage"],
+    footer [data-testid*="app"],
+    div[data-testid*="stDecoration"] button,
+    [class*="footer"] button {
+        display: none !important;
+    }
+
+    /* Additional targeting for bottom navigation buttons */
+    [role="navigation"] button,
+    nav button {
+        display: none !important;
+    }
 
     /* Ensure sidebar toggle remains visible */
     [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; }
