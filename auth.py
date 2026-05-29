@@ -2,9 +2,51 @@ import streamlit as st
 from supabase import create_client
 import hashlib
 
+# ==========================================
+# 🎨 LOGIN SCREEN STYLING
+# ==========================================
+def set_login_background(image_url):
+    """
+    Pulls an image securely from Supabase Storage and injects it as a 
+    full-screen, mobile-friendly background with a dark readability overlay.
+    """
+    st.markdown(
+        f"""
+        <style>
+        /* 🟢 1. THE BACKGROUND */
+        .stApp {{
+            background-image: linear-gradient(rgba(17, 24, 39, 0.5), rgba(17, 24, 39, 0.6)), 
+                              url('{image_url}');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            background-repeat: no-repeat;
+        }}
+        
+        /* 🟢 2. REMOVE INPUT BORDERS */
+        div[data-baseweb="input"] {{
+            border: none !important;
+            background-color: rgba(30, 41, 59, 0.7) !important; 
+        }}
+        
+        div[data-baseweb="input"]:focus-within {{
+            box-shadow: none !important;
+            border: none !important;
+        }}
+
+        /* 🟢 3. REMOVE OUTER FORM BORDER */
+        [data-testid="stForm"] {{
+            border: none !important;
+            background-color: transparent !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
 def check_password():
     """Returns `True` if the user has a valid password or secure URL token."""
-
+    
     # --- 1. MAGIC LINK / URL TOKEN CHECKER ---
     # Look for saved bookmarks containing ?user=...&auth=...
     query_params = st.query_params
@@ -60,6 +102,12 @@ def check_password():
         return True
 
     # --- 2. THE UI: Restored and Cleaned Up ---
+    
+    # 🟢 ACTIVATE THE BACKGROUND
+    
+    bg_url = st.secrets["app_config"]["bg_image_url"]
+    set_login_background(image_url=bg_url)
+    
     st.markdown("<h2 style='text-align: center;'>🔒 Gym Access Portal</h2>", unsafe_allow_html=True)
     
     def password_entered():

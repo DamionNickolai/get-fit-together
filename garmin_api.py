@@ -9,6 +9,7 @@ def fetch_garmin_data_layer(today_str: str, cache_partition: str, _client):
     try:
         stats = _client.get_stats(today_str) or {}
 
+        # --- STEPS, RHR, BODY BATTERY, STRESS, CALORIES, HRV (Unchanged) ---
         raw_steps = stats.get("totalSteps")
         steps = f"{int(raw_steps):,}" if raw_steps else "0"
 
@@ -49,16 +50,19 @@ def fetch_garmin_data_layer(today_str: str, cache_partition: str, _client):
 
         debug_info = {"Date_Queried": today_str, "Main_Stats": stats}
 
+        # 🟢 1. FIX THE SLEEP SCORE API CHANGES
         sleep_score = "--"
         try:
             sleep_data = _client.get_sleep_data(today_str)
             debug_info["RAW_SLEEP"] = sleep_data 
             
             if sleep_data:
-                if "dailySleepDTO" in sleep_data and sleep_data["dailySleepDTO"]:
-                    sleep_score = sleep_data["dailySleepDTO"].get("sleepScore", "--")
-                if sleep_score == "--" and "sleepScores" in sleep_data:
-                    sleep_score = sleep_data["sleepScores"].get("overall", {}).get("value", "--")
+                # Garmin's new nested structure: dailySleepDTO -> sleepScores -> overall -> value
+                sleep_score = sleep_data.get("dailySleepDTO", {}).get("sleepScores", {}).get("overall", {}).get("value", "--")
+                
+                # Fallback to the old structure just in case
+                if sleep_score == "--":
+                    sleep_score = sleep_data.get("dailySleepDTO", {}).get("sleepScore", "--")
         except Exception as sleep_err:
             debug_info["SLEEP_ERROR"] = str(sleep_err)
 
@@ -66,6 +70,7 @@ def fetch_garmin_data_layer(today_str: str, cache_partition: str, _client):
         weight_goal = "--"
         recent_weight_history = []
 
+        # 🟢 2. FIX THE WEIGHT SORTING & GOAL WEIGHT
         try:
             tz = ZoneInfo("America/Chicago")
             start_date = (datetime.datetime.now(tz) - datetime.timedelta(days=30)).date().isoformat()
@@ -73,11 +78,10 @@ def fetch_garmin_data_layer(today_str: str, cache_partition: str, _client):
             debug_info["RAW_BODY"] = body_data 
 
             if body_data:
+                # Try getting goal from body composition first
                 goals = body_data.get("goals")
-                if isinstance(goals, dict):
-                    g_w = goals.get("weightGoal")
-                    if g_w:
-                        weight_goal = f"{round((g_w / 1000) * 2.20462, 1)} lbs"
+                if isinstance(goals, dict) and goals.get("weightGoal"):
+                    weight_goal = f"{round((goals.get('weightGoal') / 1000) * 2.20462, 1)} lbs"
 
                 if "dateWeightList" in body_data and len(body_data["dateWeightList"]) > 0:
                     for entry in body_data["dateWeightList"]:
@@ -88,7 +92,20 @@ def fetch_garmin_data_layer(today_str: str, cache_partition: str, _client):
                             recent_weight_history.append({"date": c_date, "weight": w_lbs})
 
                 if recent_weight_history:
+                    # 🟢 THE FIX: Force sort chronologically so [-1] is ALWAYS the newest weight!
+                    recent_weight_history = sorted(recent_weight_history, key=lambda x: x["date"])
                     weight_lbs = recent_weight_history[-1]["weight"]
+
+            # 🟢 3. HUNT FOR THE GOAL WEIGHT IN THE USER PROFILE
+            if weight_goal == "--":
+                try:
+                    profile_data = _client.get_user_profile()
+                    debug_info["RAW_PROFILE"] = profile_data
+                    # Sometimes stored in grams, sometimes kg. Let's assume grams like body_comp
+                    if profile_data and profile_data.get("weightGoal"):
+                        weight_goal = f"{round((profile_data.get('weightGoal') / 1000) * 2.20462, 1)} lbs"
+                except Exception as profile_err:
+                    debug_info["PROFILE_ERROR"] = str(profile_err)
 
         except Exception as body_err:
             debug_info["BODY_ERROR"] = str(body_err)

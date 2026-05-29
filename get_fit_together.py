@@ -27,29 +27,63 @@ from database import check_and_bulk_log_garmin_weight, check_and_autolog_garmin_
 from workouts import ROUTINES
 
 # 🟢 3. APP VERSIONING
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 st.session_state["APP_VERSION"] = APP_VERSION
 
+import streamlit as st
+# ... [your other imports] ...
+
+# 🟢 1. APP VERSIONING
+APP_VERSION = "1.4.0"
+st.session_state["APP_VERSION"] = APP_VERSION
+
+# ==========================================
+# 🛠️ STATIC UI STYLESHEET (Runs instantly)
+# ==========================================
+st.markdown("""
+    <style>
+    /* Hides the "Press Enter to submit form" text globally */
+    div[data-testid="InputInstructions"] { display: none !important; }
+    
+    /* Hides the standard web browser number arrows */
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    
+    /* Hides Streamlit's custom +/- buttons */
+    [data-testid="stNumberInputStepUp"] { display: none !important; }
+    [data-testid="stNumberInputStepDown"] { display: none !important; }
+    </style>
+""", unsafe_allow_html=True)
+
+
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
+# 🟢 THE BOUNCER: This function checks your URL, logs you in, AND fetches your colors!
 if check_password():
+
     # --- 3. DYNAMIC METADATA & COLOR THEMING ---
     user = st.session_state["logged_in_user"]
     role = st.session_state["user_role"]
     
-    # 🟢 THE FIX: Pulls the individual variables exactly as auth.py saved them
+    # ==========================================
+    # 🎨 DYNAMIC THEME STYLESHEET (Runs AFTER login)
+    # ==========================================
+    # Now that check_password() has run, these variables will successfully find your database colors!
     page_bg_color = st.session_state.get("primary_color", "#1F2937")
     side_bg = st.session_state.get("sidebar_color", "#111827")
     chart_line_color = st.session_state.get("line_color", "#34D399")
     g_prefix = st.session_state.get("garmin_prefix", "").lower()
 
+    # Notice we use the f-string (f""") and double brackets {{ }} here!
     st.markdown(f"""
         <style>
         .stApp {{ background-color: {page_bg_color}; color: white; }}
         [data-testid="stSidebar"] {{ background-color: {side_bg} !important; opacity: 1 !important; }}
         .stTabs [data-baseweb="tab"] {{ color: white !important; }}
         </style>
-        """, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
+    # ... [The rest of your app UI starts here (Tabs, Sidebar, etc.)] ...
+    
     # 📡 THE BUG RADAR (Only alerts if you are the developer)
     if role == "developer":
         try:
@@ -58,7 +92,17 @@ if check_password():
             bug_count = len(radar_response.data) if radar_response.data else 0
             
             if bug_count > 0:
-                st.warning(f"🐞 **Developer Alert:** You have {bug_count} unresolved bug report(s) waiting in the Admin Panel.")
+                # 🟢 CUSTOM ALERT STYLING (Yellow text, No background)
+                st.markdown(
+                    f"""
+                    <div style='background-color: transparent; margin-bottom: 15px;'>
+                        <h4 style='color: #facc15; margin: 0px;'>
+                            🐞 Developer Alert: You have {bug_count} unresolved bug report(s) waiting in the Admin Panel.
+                        </h4>
+                    </div>
+                    """, 
+                    unsafe_allow_html=True
+                )
         except Exception:
             pass # Fails silently so it doesn't interrupt your workout logging
 
@@ -68,7 +112,17 @@ if check_password():
     is_local_env = (env == "local")
 
     if is_local_env:
-        st.warning("🚧 DEV MODE ACTIVE: Connected to Supabase DEV Database")
+        # 🟢 CUSTOM ALERT STYLING
+        st.markdown(
+            """
+            <div style="background-color: #fef08a; padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #facc15;">
+                <h3 style="color: #b91c1c; margin: 0px; text-align: center;">
+                    🚧 DEV MODE ACTIVE: Connected to Supabase DEV Database
+                </h3>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
 
     if role == "developer" and is_local_env:
         st.title(f"💪 Developer Sandbox: {user}")
@@ -137,7 +191,9 @@ if check_password():
             "Raw": f"Init Error: {init_err}"
         }
 
-    # --- 5. LOGGING SIDEBAR (Ultra-Clean Input Only) ---
+    # ==========================================
+    #  LOGGING SIDEBAR (Ultra-Clean Input Only)
+    # ==========================================
     st.sidebar.header("🏋️ Log a Session")
     
     # 🟢 NEW PHASE SELECTION MAPPER
@@ -158,7 +214,13 @@ if check_password():
     
     selected_q = phase_map[selected_short_phase]
     
-    date_input = st.sidebar.date_input("Date", datetime.date.today())
+    # 🟢 THE TIMEZONE FIX
+    # Force the app to calculate 'today' based on Central Time, ignoring the server's UTC clock
+    from zoneinfo import ZoneInfo
+    local_tz = ZoneInfo("America/Chicago")
+    local_today = datetime.datetime.now(local_tz).date()
+    
+    date_input = st.sidebar.date_input("Date", local_today)
     
     # 🔄 DATA ROUTING ENGINE
     details_prefix = ""
@@ -227,6 +289,11 @@ if check_password():
                                 master_exercises.append(clean_name)
             
             master_exercises.sort()
+            
+            # 🟢 THE DEADLIFT INJECTION
+            if "Deadlift" not in master_exercises:
+                master_exercises.append("Deadlift")
+                
             master_exercises.append("Other (Specify in Notes)")
             
             activity_value = st.sidebar.selectbox("Exercise / Activity", master_exercises)
@@ -277,7 +344,9 @@ if check_password():
     with st.sidebar.form(key=f"activity_log_form_{reset_id}"):
         
         # 🟢 DYNAMIC COLUMNS: Hide weight if it's bodyweight-only
-        is_bodyweight = activity_value in BODYWEIGHT_ONLY_EXERCISES
+        # It's bodyweight if it's in the specific list, OR if the whole phase is a TRX phase!
+        is_trx_phase = selected_q in ["TRX Suspension Mastery", "TRX Rip Trainer Power"]
+        is_bodyweight = (activity_value in BODYWEIGHT_ONLY_EXERCISES) or is_trx_phase
         
         if show_lift_stats:
             # Notice we use st.columns instead of st.sidebar.columns inside a form container
@@ -301,7 +370,7 @@ if check_password():
         extra_notes = st.text_input("Notes / Explanation", placeholder="Optional: Provide any details...", key=f"notes_{reset_id}")
 
         # 5. SUBMIT BUTTON (This replaces your previous st.sidebar.button)
-        submit_log = st.form_submit_button("💾 Log Activity", type="primary", use_container_width=True)
+        submit_log = st.form_submit_button("💾 Log Activity", type="primary", width='stretch')
 
 
     # 🔄 6. DATABASE SYNC LOGIC (Triggers only when the form is submitted)
@@ -367,28 +436,57 @@ if check_password():
     # ⚙️ SIDEBAR UTILITY FOOTER 
     # ==========================================
     st.sidebar.markdown("---")
+    st.sidebar.divider()
     
-    # 🔄 1. Public Log Out Button (Visible to everyone)
-    if st.sidebar.button("🚪 Switch User / Log Out", use_container_width=True):
-        for key in list(st.session_state.keys()):
-            if "live_garmin_client" in key or "garmin_token" in key:
-                del st.session_state[key]
-        
-        st.session_state["password_correct"] = False
-        st.session_state["logged_in_user"] = None
-        st.session_state["user_role"] = None
-        
-        # 🟢 Wipes the magic URL tokens
-        st.query_params.clear() 
-        st.rerun()
+    # GOAL WEIGHT SETTING EXPANDER
+    with st.sidebar.expander("🎯 Set Goal Weight"):
 
-    # 🟢 2. THE PANIC BUTTON (Public Bug Reporter)
+        # 1. Fetch current goal
+        current_goal_response = supabase.table("users").select("goal_weight").eq("username", user).execute()
+        
+        current_goal = 0.0
+        if current_goal_response.data and current_goal_response.data[0].get("goal_weight"):
+            current_goal = float(current_goal_response.data[0]["goal_weight"])
+            
+        # 2. THE FORM UPGRADE
+        with st.form(key="goal_weight_form"):
+            # 🟢 SET VALUE TO NONE AND ADD A PLACEHOLDER
+            new_goal = st.number_input(
+                "Target Weight (lbs)", 
+                min_value=100.0, 
+                max_value=400.0, 
+                value=None, 
+                placeholder=f"{current_goal}", # Shows as grey background text
+                step=0.1
+            )
+            submit_goal = st.form_submit_button("💾 Save Goal", type="primary")
+            
+        # 3. TRIGGER AND ERROR CHECKING
+        if submit_goal:
+            # 🟢 NEW SAFETY CHECK: Don't save if they left it blank
+            if new_goal is None:
+                st.warning("Please enter a new goal weight before saving.")
+            else:
+                try:
+                    # Attempt to update the database
+                    update_response = supabase.table("users").update({"goal_weight": new_goal}).eq("username", user).execute()
+                    
+                    if not update_response.data:
+                        st.error(f"⚠️ Supabase received the request, but couldn't update the row for '{user}'.")
+                    else:
+                        st.success(f"Goal updated to {new_goal} lbs!")
+                        st.rerun() 
+                        
+                except Exception as e:
+                    st.error(f"❌ Failed to connect to database: {e}")
+
+    # 🟢 THE PANIC BUTTON (Public Bug Reporter)
     with st.sidebar.expander("🐛 Report an Issue"):
         # Wrap in a form so it clears instantly on submit
         with st.form(key=f"bug_report_{reset_id}", clear_on_submit=True):
             st.caption("Did something break? Tell the developer directly!")
             bug_text = st.text_area("What happened?", placeholder="e.g., The cardio duration box isn't showing up.")
-            submit_bug = st.form_submit_button("📤 Send to Developer", type="secondary", use_container_width=True)
+            submit_bug = st.form_submit_button("📤 Send to Developer", type="secondary", width='stretch')
             
             if submit_bug:
                 if not bug_text.strip():
@@ -409,7 +507,7 @@ if check_password():
                         except Exception as bug_err:
                             st.error(f"Failed to send: {bug_err}")
 
-    # 🔒 3. THE DEV LOCK: Only show the backend debugging tools to developers
+    # 🔒 THE DEV LOCK: Only show the backend debugging tools to developers
     if role == "developer":
         
         # 🛠️ Garmin Debugger Expander (Dev Only)
@@ -417,7 +515,7 @@ if check_password():
             st.caption(f"**Connection Status:** `{garmin_status.upper()}`")
             st.caption(f"**Target Profile Prefix:** `{g_prefix}`")
             
-            if st.button("🧹 Reset Garmin Session", use_container_width=True):
+            if st.button("🧹 Reset Garmin Session", width='stretch'):
                 st.session_state["garmin_status"] = "Standby Mode"
                 st.session_state["daily_metrics"] = {
                     "Steps": "0", "RHR": 60, "Body Battery": 50, "Stress": "--",
@@ -440,8 +538,25 @@ if check_password():
                 st.text_area("Raw JSON Stream", value=daily_metrics["Raw"], height=150, disabled=True)
             else:
                 st.info("No raw diagnostic payload found.")
+        
+    # 🔄 Public Log Out Button (Visible to everyone)
+    if st.sidebar.button("🚪 Switch User / Log Out", width='stretch'):
+        for key in list(st.session_state.keys()):
+            if "live_garmin_client" in key or "garmin_token" in key:
+                del st.session_state[key]
+        
+        # 🟢 THE FIX: We completely delete the password memory instead of setting it to False!
+        if "password_correct" in st.session_state:
+            del st.session_state["password_correct"]
+            
+        st.session_state["logged_in_user"] = None
+        st.session_state["user_role"] = None
+        
+        # 🟢 Wipes the magic URL tokens
+        st.query_params.clear() 
+        st.rerun()
 
-    # 🏷️ 4. Application Version Tag (Public)
+    # 🏷️ Application Version Tag (Public)
     st.sidebar.caption(f"<div style='text-align: center; color: gray; padding-top: 10px;'>Get Fit Together v{APP_VERSION}</div>", unsafe_allow_html=True)
 
     # ==========================================
@@ -576,7 +691,7 @@ if check_password():
                 st.markdown(f"**Garmin Connection Status:** :{status_color}[{st.session_state['garmin_status']}]")
             
             with col_g2:
-                if st.button("🚀 Fetch Latest Garmin Data", type="primary", use_container_width=True):
+                if st.button("🚀 Fetch Latest Garmin Data", type="primary", width='stretch'):
                     with st.spinner("Establishing secure link to Garmin..."):
                         try:
                             # 1. Login
@@ -625,7 +740,12 @@ if check_password():
             valid_weights = valid_weights[valid_weights["Body Weight"] > 0]
             
             if not valid_weights.empty:
-                display_weight = float(valid_weights.iloc[-1]["Body Weight"]) # Grabs your newest entry
+                # 🟢 THE BUG FIX: Explicitly sort by Date!
+                # ascending=True puts the newest date at the absolute bottom.
+                valid_weights = valid_weights.sort_values(by="Date", ascending=True)
+                
+                # Now iloc[-1] guarantees we grab the true newest entry
+                display_weight = float(valid_weights.iloc[-1]["Body Weight"])
         
         # If no manual logs exist, fall back to the Garmin Scale API
         if display_weight == 0.0:
@@ -665,18 +785,18 @@ if check_password():
         
         col5.metric("Sleep Score", f"{s_score} pts" if s_score != "--" else "—")
         col6.metric("Total Daily Burn", f"{metrics.get('Calories', '--')} kcal" if metrics.get('Calories') != "--" else "—")
-        col7.metric("Current Weight Scale", f"{display_weight} lbs" if display_weight > 0 else "—")
-        col8.metric("Garmin Weight Goal", metrics.get("Weight Goal", "—"))
+        col7.metric("Current Weight", f"{display_weight} lbs" if display_weight > 0 else "—")
+        col8.metric("Weight Goal", f"{current_goal} lbs")
 
     # ------------------------------------------
     # 📈 TAB 3: PROGRESS CHARTS
     # ------------------------------------------
     with tab3:
-        st.subheader("📈 Exercise Performance Progression")
+        # 🟢 CENTERED MAIN HEADER
+        st.markdown("<h3 style='text-align: center; margin-bottom: 20px;'>📈 Exercise Performance Progression</h3>", unsafe_allow_html=True)
         if log_df.empty:
             st.info("No training data found in the cloud logs to plot yet.")
         else:
-            # 🟢 THE FIX: Force numbers, remove blanks, and plot all weight ins!
             chart_df = log_df[log_df["User"] == user].copy()
             chart_df["Body Weight"] = pd.to_numeric(chart_df["Body Weight"], errors="coerce")
             
@@ -685,10 +805,209 @@ if check_password():
             weight_trend_df = weight_trend_df[weight_trend_df["Body Weight"] > 0]
             
             if not weight_trend_df.empty:
-                st.line_chart(data=weight_trend_df, x="Date", y="Body Weight")
-                st.caption("Historical weight performance data tracked across your active sessions.")
+                
+                # 🟢 HOW TO DISABLE CODE
+                # By putting a '#' in front of these lines, Python ignores them!
+                # We also removed the st.caption completely as requested.
+                
+                # col_c1, col_c2 = st.columns([3, 2], vertical_alignment="center")
+                # with col_c1:
+                #     pass 
+                # with col_c2:
+                #     enable_zoom = st.toggle("🔍 Allow Zooming", value=False)
+                
+                # We hardcode enable_zoom to False so the chart knows to stay locked!
+                enable_zoom = False 
+                
+                # 🟢 CALCULATE THE 7-DAY TREND
+                weight_trend_df = weight_trend_df.sort_values(by="Date")
+                weight_trend_df["7-Day Trend"] = weight_trend_df["Body Weight"].rolling(window=7, min_periods=1).mean()
+
+                # 🟢 THE FOOLPROOF TITLE
+                # We use Streamlit to draw the title outside the chart area!
+                # The negative bottom margin pulls it snug against the timeframe buttons.
+                st.markdown("<h4 style='text-align: center; margin-bottom: -15px;'>Body Weight Trend</h4>", unsafe_allow_html=True)
+
+                # 1. Create the base line chart
+                # (Notice we completely removed the title from inside Plotly)
+                fig = px.line(
+                    weight_trend_df, 
+                    x="Date", 
+                    y=["Body Weight", "7-Day Trend"]
+                )
+                
+                # 2. CHANGE DAILY WEIGH-IN TO A LINE & FIX HOVER TEXT 🟢
+                # The hovertemplate="%{y:.1f} lbs" is the magic wand that cleans up the pop-out!
+                fig.data[0].update(
+                    mode='lines', 
+                    line=dict(color='red', width=3), 
+                    opacity=0.4, 
+                    name="Weigh-in",
+                    hovertemplate="%{y:.1f} lbs"
+                )
+                fig.data[1].update(
+                    line=dict(color=chart_line_color, width=6), 
+                    name="Trend",
+                    hovertemplate="%{y:.1f} lbs"
+                )
+
+                # 3. ADD A HORIZONTAL GOAL LINE
+                fig.add_hline(
+                    y=current_goal, # Now dynamically pulls from your sidebar variable!
+                    line_dash="dash", 
+                    line_color="green", 
+                    opacity=0.8,
+                    annotation_text="Goal", 
+                    annotation_position="right"
+                )
+
+                # 4. Apply Mobile-Friendly Styling & Layout
+                fig.update_layout(
+                    
+                    xaxis=dict(
+                        title="",
+                        rangeselector=dict(
+                            buttons=list([
+                                dict(count=1, label="1M", step="month", stepmode="backward"),
+                                dict(count=3, label="3M", step="month", stepmode="backward"),
+                                dict(count=6, label="6M", step="month", stepmode="backward"),
+                                dict(label="All", step="all")
+                            ]),
+                            bgcolor="rgba(0,0,0,0.5)" 
+                        ),
+                        type="date"
+                    ),
+                    yaxis_title="Weight (lbs)",
+                    # 🟢 ADJUST TOP MARGIN
+                    # You guessed it! Dropping this from 60 to 45 pulls everything slightly closer together.
+                    margin=dict(l=10, r=10, t=45, b=10), 
+                    hovermode="x unified",       
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    dragmode=False, # Removed the dynamic zoom check since you are keeping it locked
+                    
+                    # 5. THE LEGEND LAYOUT
+                    legend=dict(
+                        title_text="",       
+                        orientation="h",     
+                        yanchor="bottom",
+                        y=1.02,              # Dropped slightly to sit closer to the timeframe buttons
+                        xanchor="right",
+                        x=1                  
+                    )
+                )
+
+                # Render in Streamlit
+                st.plotly_chart(
+                    fig, 
+                    config={'displayModeBar': False} # Hardcoded to False since we dropped the zoom toggle
+                )
+                
             else:
                 st.info("Log a few sessions with your body weight to light up your chart metrics!")
+
+            # ==========================================
+        # 🟢 NEW: THE BIG 3 STRENGTH TRACKER
+        # ==========================================
+        st.write("---") # Visual separator from the bodyweight chart
+        st.markdown("<h3 style='text-align: center; margin-bottom: 20px;'>💪 Big 3 Strength Tracker</h3>", unsafe_allow_html=True)
+        
+        col_s1, col_s2, col_s3 = st.columns([1, 2, 1])
+        with col_s2:
+            # You can easily add "Overhead Press" or "Barbell Row" to this list later!
+            target_lift = st.selectbox("Select Core Lift", ["Bench Press", "Squat", "Deadlift"], label_visibility="collapsed")
+
+            # --- PR CALCULATOR ---
+            # We filter the whole history (not just the chart) to find your all-time best
+            all_time_max = log_df[(log_df["User"] == user) & (log_df["Activity"].str.contains(target_lift, case=False, na=False))].copy()
+            all_time_max["Weight"] = all_time_max["Details"].str.extract(r'\|\s*([0-9.]+)\s*lbs').astype(float)
+            
+            pr_val = all_time_max["Weight"].max()
+            pr_display = f"{pr_val:.1f}" if pd.notna(pr_val) else "--"
+            
+            st.markdown(f"<p style='text-align: center; color: #34D399; font-weight: bold;'>PR: {pr_display} lbs</p>", unsafe_allow_html=True)
+        
+        if log_df.empty:
+            st.info("No training data found to track strength metrics.")
+        else:
+            # 1. Filter the entire database for the selected lift
+            lift_df = log_df[(log_df["User"] == user) & (log_df["Activity"].str.contains(target_lift, case=False, na=False))].copy()
+            
+            if not lift_df.empty:
+                # 2. THE REGEX EXTRACTION ENGINE
+                # This hunts through the "Details" string (e.g., "3 Sets | 5 Reps | 315.0 lbs") 
+                # and isolates the exact number sitting right before "lbs".
+                lift_df["Weight Lifted"] = lift_df["Details"].str.extract(r'\|\s*([0-9.]+)\s*lbs').astype(float)
+                
+                # 3. Clean up the data (Drop rows where you didn't log a weight)
+                lift_df = lift_df.dropna(subset=["Weight Lifted"])
+                lift_df = lift_df[lift_df["Weight Lifted"] > 0]
+                
+                if not lift_df.empty:
+                    # 4. Find the Daily Max 
+                    # (If you log 3 warmup sets and 1 working set on the same day, this isolates your heaviest lift!)
+                    daily_max_df = lift_df.groupby("Date")["Weight Lifted"].max().reset_index()
+                    daily_max_df = daily_max_df.sort_values(by="Date")
+                    
+                    # 5. Calculate a 3-Session Rolling Trend Line
+                    daily_max_df["Trend"] = daily_max_df["Weight Lifted"].rolling(window=3, min_periods=1).mean()
+                    
+                    # 6. Build the Chart
+                    fig_lift = px.line(
+                        daily_max_df, 
+                        x="Date", 
+                        y=["Weight Lifted", "Trend"]
+                    )
+                    
+                    # 7. Match the Styling to your Body Weight Chart perfectly
+                    fig_lift.data[0].update(
+                        mode='lines+markers', # Added markers so individual workout days pop
+                        line=dict(color='red', width=3), # Amber color for the raw heavy lift
+                        opacity=0.5, 
+                        name="Max Lift",
+                        hovertemplate="%{y:.1f} lbs"
+                    )
+                    fig_lift.data[1].update(
+                        line=dict(color=chart_line_color, width=6), 
+                        name="Trend",
+                        hovertemplate="%{y:.1f} lbs"
+                    )
+                    
+                    fig_lift.update_layout(
+                        xaxis=dict(
+                            title="",
+                            rangeselector=dict(
+                                buttons=list([
+                                    dict(count=1, label="1M", step="month", stepmode="backward"),
+                                    dict(count=3, label="3M", step="month", stepmode="backward"),
+                                    dict(count=6, label="6M", step="month", stepmode="backward"),
+                                    dict(label="All", step="all")
+                                ]),
+                                bgcolor="rgba(0,0,0,0.5)" 
+                            ),
+                            type="date"
+                        ),
+                        yaxis_title="Weight (lbs)",
+                        margin=dict(l=10, r=10, t=10, b=10), 
+                        hovermode="x unified",       
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        dragmode=False,
+                        legend=dict(
+                            title_text="",       
+                            orientation="h",     
+                            yanchor="bottom",
+                            y=1.02,              
+                            xanchor="right",
+                            x=1                  
+                        )
+                    )
+                    
+                    st.plotly_chart(fig_lift, config={'displayModeBar': False})
+                else:
+                    st.info(f"You have logged {target_lift}, but we couldn't detect the weight. Ensure you use the structured sidebar logger!")
+            else:
+                st.info(f"No {target_lift} sessions found in your history yet. Time to hit the iron!")
 
     # ------------------------------------------
     # 📋 TAB 4: HISTORY LOG
@@ -746,25 +1065,81 @@ if check_password():
         with tab_changelog:
             st.subheader("📢 What's New: Release Notes")
             try:
-                # 1. Fetch data from Supabase
+                # 🟢 1. DEV ONLY: DRAFT RELEASE PREVIEW
+                if role == "developer" and is_local_env:
+                    staged_response = supabase.table("backlog").select("*").eq("status", "Staged").execute()
+                    
+                    if staged_response.data:
+                        # Grab all categories to do the living math
+                        categories = [r.get("category", "") for r in staged_response.data]
+                        current_v = st.session_state.get("APP_VERSION", APP_VERSION)
+                        
+                        try:
+                            major, minor, patch = map(int, current_v.replace('v', '').strip().split('.'))
+                            if "Core" in categories:
+                                major += 1; minor = 0; patch = 0
+                            elif "UI" in categories:
+                                minor += 1; patch = 0
+                            elif "Bug" in categories:
+                                patch += 1
+                            proposed_v = f"{major}.{minor}.{patch}"
+                        except:
+                            proposed_v = current_v
+                            
+                        # Render the Yellow Warning Banner
+                        st.markdown(f"""
+                        <div style="background-color: #fef08a; padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #facc15;">
+                            <h4 style="color: #b91c1c; margin: 0px; text-align: center;">
+                                🚧 DRAFT PREVIEW: Proposed Release v{proposed_v}
+                            </h4>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Render the staged items exactly how they will look in production
+                        # 🟢 THE CLEAN BUNDLING ENGINE
+                    # Map your category names to formal display titles
+                    cat_display = {"Core": "Core Features", "UI": "User Interface / Experience", "Bug": "Bug Fixes", "Ops": "Operations"}
+                    
+                    # 1. Get the list of unique categories actually present in this batch
+                    # (Uses a set to get unique values, then sorts by your preferred order)
+                    batch_cats = sorted(set(categories), key=lambda x: ["Core", "UI", "Bug", "Ops"].index(x))
+
+                    for cat in batch_cats:
+                        st.markdown(f"### {cat_display.get(cat, cat)}:")
+                        
+                        # Filter only items for this category
+                        cat_items = [r for r in staged_response.data if r.get("category") == cat]
+                        
+                        for item in cat_items:
+                            task = item.get("feature", "System Update")
+                            pub_msg = item.get("public_message", "")
+                            
+                            st.markdown(f"**• {task}**")
+                            if pub_msg:
+                                # Render detailed notes if they exist
+                                st.caption(f"&emsp; *{pub_msg}*")
+                            st.write("")
+                        st.divider()
+
+                # 2. Fetch data from Supabase (The normal production feed)
                 response = supabase.table("backlog").select("*").eq("status", "Done").execute()
                 
                 if response.data:
                     df = pd.DataFrame(response.data)
-                    
-                    # 2. Map Supabase names to UI names
+                                        
+                    # Map Supabase names to UI names
                     df = df.rename(columns={
                         "feature": "Feature", "category": "Category", 
                         "public_message": "Public Message", "release_date": "Release Date", 
                         "version": "Version"
                     })
                     
-                    # 3. Clean columns
+                    # Clean columns
                     for col in ["Release Date", "Version", "Public Message"]:
                         if col not in df.columns: df[col] = ""
                         df[col] = df[col].fillna("").astype(str)
 
-                    # 4. Process Dates
+                    # Process Dates
                     df["Release Date"] = pd.to_datetime(df["Release Date"], errors="coerce")
                     df["Release Date"] = df["Release Date"].fillna(pd.Timestamp("2000-01-01"))
                     
@@ -792,7 +1167,7 @@ if check_password():
                     recent_versions = unique_versions[:3]
                     older_versions = unique_versions[3:]
                    
-                    # 6. Render the most recent 3 versions
+                    # Render the most recent 3 versions
                     for v_val in recent_versions:
                         # Group by Version instead of Date
                         group = df[df["Version"] == v_val]
@@ -813,7 +1188,7 @@ if check_password():
                             st.write("")
                         st.divider()
 
-                    # 7. Render everything else in a dropdown
+                    # Render everything else in a dropdown
                     if len(older_versions) > 0:
                         with st.expander("🕰️ View Older Updates"):
                             for v_val in older_versions:
@@ -849,7 +1224,7 @@ if check_password():
                 with col_head1:
                     st.write("Manage Active App Backlog & QoL Features:")
                 with col_head2:
-                    if st.button("🔄 Refresh Data", use_container_width=True):
+                    if st.button("🔄 Refresh Data", width='stretch'):
                         st.session_state["force_admin_refresh"] = True
 
                 # Read the active backlog table directly from Supabase
@@ -857,19 +1232,34 @@ if check_password():
                 
                 if response.data:
                     df_backlog = pd.DataFrame(response.data)
-                    
-                    # 🟢 LOAD FIX: Scrub any blanks from the cloud so Streamlit doesn't crash
                     df_backlog = df_backlog.fillna("")
                     
-                    # Rename for the UI Editor
                     df_backlog = df_backlog.rename(columns={
                         "status": "Status", "category": "Category", "feature": "Feature", 
                         "priority": "Priority", "notes": "Notes", "public_message": "Public Message", 
                         "release_date": "Release Date", "version": "Version"
                     })
 
+                    # 🟢 THE MULTI-LEVEL SORTING FIX (Status -> Category -> Priority)
+                    # Clean up old/blank Priority data
+                    df_backlog["Priority"] = df_backlog["Priority"].replace("", "Low").fillna("Low")
+                    df_backlog["Priority"] = df_backlog["Priority"].astype(str).str.title()
+                    
+                    # 🟢 1. UPDATE THE STATUS HIERARCHY
+                    # Add "Staged" right before Done
+                    status_order = ["In Progress", "Backlog", "Blocked", "Staged", "Done"]
+                    df_backlog["Status"] = pd.Categorical(df_backlog["Status"], categories=status_order, ordered=True)
+
+                    category_order = ["Core", "UI", "Bug", "Ops"]
+                    df_backlog["Category"] = pd.Categorical(df_backlog["Category"], categories=category_order, ordered=True)
+
+                    priority_order = ["High", "Medium", "Low"]
+                    df_backlog["Priority"] = pd.Categorical(df_backlog["Priority"], categories=priority_order, ordered=True)
+                    
+                    df_backlog = df_backlog.sort_values(["Status", "Category", "Priority"])
+                    df_backlog = df_backlog.reset_index(drop=True)
+
                     # 🛑 Interactive Table
-                    # 🟢 THE FIX: We pass df_backlog directly into the editor now! 
                     edited_backlog = st.data_editor(
                         df_backlog, 
                         num_rows="dynamic", 
@@ -877,42 +1267,92 @@ if check_password():
                         key="admin_backlog_editor",
                         hide_index=True,  
                         column_config={
-                            "id": None, # Hiding this is key!
-                            "Status": st.column_config.SelectboxColumn("Status", width="medium", options=["Backlog", "In Progress", "Blocked", "Done"], required=True),
+                            "id": None, 
+                            # 🟢 2. ADD STAGED TO THE UI DROPDOWN
+                            "Status": st.column_config.SelectboxColumn("Status", options=["Backlog", "In Progress", "Blocked", "Staged", "Done"], required=True),
+                            "Category": st.column_config.SelectboxColumn("Category", options=["Core", "UI", "Bug", "Ops"], required=True),
+                            "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"], required=True),
                             "Public Message": st.column_config.TextColumn("Public Message", width="large"),
                             "Release Date": st.column_config.TextColumn("Release Date", disabled=True),
                             "Version": st.column_config.TextColumn("Version", disabled=True)
                         }
                     )
 
+                    # 🟢 SEMANTIC VERSIONING AUTO-CALCULATOR
+                    def calculate_next_version(current_version, categories_in_release):
+                        try:
+                            major, minor, patch = map(int, current_version.replace('v', '').strip().split('.'))
+                            
+                            if "Core" in categories_in_release:
+                                major += 1
+                                minor = 0
+                                patch = 0
+                            elif "UI" in categories_in_release:
+                                minor += 1
+                                patch = 0
+                            elif "Bug" in categories_in_release:
+                                patch += 1
+                            
+                            return f"{major}.{minor}.{patch}"
+                        except:
+                            return current_version 
+
+                    # 🟢 3. THE MAGIC BATCHING LOGIC
+                    # The calculator ONLY looks at things currently sitting in "Staged"
+                    mask_staged = (edited_backlog["Status"] == "Staged")
+                    categories_being_released = edited_backlog.loc[mask_staged, "Category"].tolist()
+                    
+                    active_version = st.session_state.get("APP_VERSION", APP_VERSION)
+                    
+                    # Only propose a new version if there are actually things sitting in Staged!
+                    if categories_being_released:
+                        proposed_version = calculate_next_version(active_version, categories_being_released)
+                    else:
+                        proposed_version = active_version
+
                     st.write("")
                     col_btn1, col_btn2 = st.columns([1, 4])
                     with col_btn1:
-                        push_version = st.text_input("Release Version", value=APP_VERSION)
+                        st.markdown(
+                            f"""
+                            <div style="font-size: 13px; color: #94A3B8; margin-bottom: 4px;">Proposed Release</div>
+                            <div style="background-color: #1E293B; border: 1px solid #334155; padding: 6px; border-radius: 6px; text-align: center; color: #34D399; font-weight: 600; font-size: 16px;">
+                                v{proposed_version}
+                            </div>
+                            """, 
+                            unsafe_allow_html=True
+                        )
+                        push_version = proposed_version 
+                        
                     with col_btn2:
                         st.write("") 
-                        push_clicked = st.button("💾 Push Updates to Cloud Database", type="primary", width="stretch")
+                        # 🟢 4. THE SPLIT BUTTONS
+                        col_save, col_deploy = st.columns([1, 1])
+                        with col_save:
+                            # This button just saves notes/statuses without touching the version number
+                            save_clicked = st.button("💾 Save Daily Work (Keep Staged)", width="stretch")
+                        with col_deploy:
+                            # This button actually cuts the production release!
+                            deploy_clicked = st.button("🚀 Cut Release & Move Staged to Done", type="primary", width="stretch")
 
-                    if push_clicked:
+                    # 🟢 5. THE NEW PUSH ROUTER
+                    if save_clicked or deploy_clicked:
                         today_str = str(datetime.date.today())
                         
-                        # 1. Identify which items were just moved to "Done" in the UI
-                        mask_done = edited_backlog["Status"] == "Done"
-                        
-                        # 2. Assign the version/date ONLY to these newly completed items
-                        edited_backlog.loc[mask_done & (edited_backlog["Release Date"] == ""), "Release Date"] = today_str
-                        edited_backlog.loc[mask_done & (edited_backlog["Version"] == ""), "Version"] = push_version
+                        if deploy_clicked and categories_being_released:
+                            # ONLY if they click Deploy do we stamp the dates, versions, and move to Done!
+                            edited_backlog.loc[mask_staged, "Release Date"] = today_str
+                            edited_backlog.loc[mask_staged, "Version"] = push_version
+                            edited_backlog.loc[mask_staged, "Status"] = "Done"
 
-                        # 3. Prepare the full payload directly from the editor
+                        # Prepare the full payload for Supabase
                         upload_df = edited_backlog.rename(columns={
                             "Status": "status", "Category": "category", "Feature": "feature", 
                             "Priority": "priority", "Notes": "notes", "Public Message": "public_message", 
                             "Release Date": "release_date", "Version": "version"
                         })
                         
-                        # Scrub NaN values, Separate Updates from Inserts, and Fix Text Constraints
                         raw_records = upload_df.to_dict(orient="records")
-                        
                         records_to_update = []
                         records_to_insert = []
                         
@@ -926,33 +1366,31 @@ if check_password():
                                         clean_row[key] = int(float(value))
                                         has_valid_id = True
                                     except (ValueError, TypeError):
-                                        continue # Drop the ID completely for new rows
+                                        continue 
                                 else:
-                                    # Keep text columns as empty strings so we don't trip NOT NULL constraints
                                     if pd.isna(value) or value is None or str(value).strip() in ["None", "nan"]:
                                         clean_row[key] = ""
                                     else:
                                         clean_row[key] = value
                                         
-                            # 🟢 THE GHOST ROW FIX: Only insert if they actually typed a feature name
                             if has_valid_id:
                                 records_to_update.append(clean_row)
                             else:
-                                if clean_row.get("feature"): # Requires at least a feature name to insert
+                                if clean_row.get("feature"): 
                                     records_to_insert.append(clean_row)
                         
-                        # 🟢 THE DIAGNOSTIC PUSH
                         try:
                             if records_to_update:
                                 supabase.table("backlog").upsert(records_to_update).execute()
-                                
                             if records_to_insert:
                                 supabase.table("backlog").insert(records_to_insert).execute()
                                 
-                            st.success(f"✅ Version {push_version} successfully synced to Supabase!")
-                            
-                            st.session_state["APP_VERSION"] = push_version
-                            
+                            if deploy_clicked:
+                                st.success(f"✅ Release {push_version} Cut! Run your deploy.py script now.")
+                                st.session_state["APP_VERSION"] = push_version
+                            else:
+                                st.success("✅ Daily progress saved!")
+                                
                             if "admin_backlog_editor" in st.session_state:
                                 del st.session_state["admin_backlog_editor"]
                             
@@ -960,7 +1398,6 @@ if check_password():
                             st.rerun()
                             
                         except Exception as e:
-                            # If it fails now, it will tell us EXACTLY why on the screen!
                             st.error(f"❌ Supabase rejected the payload: {e}")
                 else:
                     st.info("Backlog is empty. Add a ticket to get started!")
