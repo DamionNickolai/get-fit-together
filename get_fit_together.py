@@ -55,23 +55,30 @@ st.markdown("""
     header { background-color: transparent !important; }
     header > div { background-color: transparent !important; }
 
+    /* Ensure sidebar toggle remains visible */
+    [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; }
+    button[aria-label*="collapse"] { display: block !important; visibility: visible !important; }
+    button[aria-label*="expand"] { display: block !important; visibility: visible !important; }
+
     </style>
     <script>
-    // Hide the "Manage app" button at the outer page level
-    function hideManageAppButton() {
-        const button = document.querySelector('[data-testid="manage-app-button"]');
-        if (button) {
-            button.style.display = 'none';
-            button.remove();
+    // Nuclear approach: hide manage-app-button with multiple timeouts
+    function destroyManageAppButton() {
+        const btn = document.querySelector('[data-testid="manage-app-button"]');
+        if (btn) {
+            btn.parentElement.removeChild(btn);
+        }
+        const byClass = document.querySelector('button[class*="_terminalButton"]');
+        if (byClass) {
+            byClass.parentElement.removeChild(byClass);
         }
     }
 
-    // Hide it immediately
-    hideManageAppButton();
-
-    // Watch for changes and hide it if it reappears
-    const observer = new MutationObserver(hideManageAppButton);
-    observer.observe(document.body, { childList: true, subtree: true });
+    // Run at multiple intervals to catch late renders
+    destroyManageAppButton();
+    setTimeout(destroyManageAppButton, 100);
+    setTimeout(destroyManageAppButton, 500);
+    setTimeout(destroyManageAppButton, 1000);
     </script>
 """, unsafe_allow_html=True)
 
