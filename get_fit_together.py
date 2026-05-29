@@ -30,13 +30,6 @@ from workouts import ROUTINES
 APP_VERSION = "1.4.0"
 st.session_state["APP_VERSION"] = APP_VERSION
 
-import streamlit as st
-# ... [your other imports] ...
-
-# 🟢 1. APP VERSIONING
-APP_VERSION = "1.4.0"
-st.session_state["APP_VERSION"] = APP_VERSION
-
 # ==========================================
 # 🛠️ STATIC UI STYLESHEET (Runs instantly)
 # ==========================================
@@ -1065,12 +1058,16 @@ if check_password():
         with tab_changelog:
             st.subheader("📢 What's New: Release Notes")
             try:
-                # 🟢 1. DEV ONLY: DRAFT RELEASE PREVIEW
+                # 🟢 1. GLOBAL DICTIONARY (Used by both Dev and Prod feeds)
+                cat_display = {"Core": "Core Features", "UI": "User Interface / Experience", "Bug": "Bug Fixes", "Ops": "Operations"}
+                
+                # ==========================================
+                # 2. DEV ONLY: DRAFT RELEASE PREVIEW
+                # ==========================================
                 if role == "developer" and is_local_env:
                     staged_response = supabase.table("backlog").select("*").eq("status", "Staged").execute()
                     
                     if staged_response.data:
-                        # Grab all categories to do the living math
                         categories = [r.get("category", "") for r in staged_response.data]
                         current_v = st.session_state.get("APP_VERSION", APP_VERSION)
                         
@@ -1086,7 +1083,6 @@ if check_password():
                         except:
                             proposed_v = current_v
                             
-                        # Render the Yellow Warning Banner
                         st.markdown(f"""
                         <div style="background-color: #fef08a; padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #facc15;">
                             <h4 style="color: #b91c1c; margin: 0px; text-align: center;">
@@ -1095,59 +1091,44 @@ if check_password():
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # Render the staged items exactly how they will look in production
-                        # 🟢 THE CLEAN BUNDLING ENGINE
-                    # Map your category names to formal display titles
-                    cat_display = {"Core": "Core Features", "UI": "User Interface / Experience", "Bug": "Bug Fixes", "Ops": "Operations"}
-                    
-                    # 1. Get the list of unique categories actually present in this batch
-                    # (Uses a set to get unique values, then sorts by your preferred order)
-                    batch_cats = sorted(set(categories), key=lambda x: ["Core", "UI", "Bug", "Ops"].index(x))
+                        # 🟢 SAFE SORTING (The 'else 99' prevents crashes from old/weird tags!)
+                        batch_cats = sorted(set(categories), key=lambda x: ["Core", "UI", "Bug", "Ops"].index(x) if x in ["Core", "UI", "Bug", "Ops"] else 99)
 
-                    for cat in batch_cats:
-                        st.markdown(f"### {cat_display.get(cat, cat)}:")
-                        
-                        # Filter only items for this category
-                        cat_items = [r for r in staged_response.data if r.get("category") == cat]
-                        
-                        for item in cat_items:
-                            task = item.get("feature", "System Update")
-                            pub_msg = item.get("public_message", "")
+                        for cat in batch_cats:
+                            st.markdown(f"#### {cat_display.get(cat, cat)}")
+                            cat_items = [r for r in staged_response.data if r.get("category") == cat]
                             
-                            st.markdown(f"**• {task}**")
-                            if pub_msg:
-                                # Render detailed notes if they exist
-                                st.caption(f"&emsp; *{pub_msg}*")
+                            for item in cat_items:
+                                task = item.get("feature", "System Update")
+                                pub_msg = item.get("public_message", "")
+                                
+                                st.markdown(f"**• {task}**")
+                                if pub_msg and str(pub_msg).strip() not in ["", "None"]:
+                                    st.caption(f"&emsp; *{pub_msg}*")
                             st.write("")
                         st.divider()
 
-                # 2. Fetch data from Supabase (The normal production feed)
+                # ==========================================
+                # 3. PROD FEED (The Formal History)
+                # ==========================================
                 response = supabase.table("backlog").select("*").eq("status", "Done").execute()
                 
                 if response.data:
                     df = pd.DataFrame(response.data)
-                                        
-                    # Map Supabase names to UI names
+                    
                     df = df.rename(columns={
                         "feature": "Feature", "category": "Category", 
                         "public_message": "Public Message", "release_date": "Release Date", 
                         "version": "Version"
                     })
                     
-                    # Clean columns
                     for col in ["Release Date", "Version", "Public Message"]:
                         if col not in df.columns: df[col] = ""
                         df[col] = df[col].fillna("").astype(str)
 
-                    # Process Dates
-                    df["Release Date"] = pd.to_datetime(df["Release Date"], errors="coerce")
-                    df["Release Date"] = df["Release Date"].fillna(pd.Timestamp("2000-01-01"))
+                    df["Release Date"] = pd.to_datetime(df["Release Date"], errors="coerce").fillna(pd.Timestamp("2000-01-01"))
                     
-                    # ==========================================
-                    # 🟢 THE FUTURE-PROOF VERSION FILTER
-                    # ==========================================
                     def parse_version(v_str):
-                        """Converts '1.3.0' into (1, 3, 0) so Python can do math on it"""
                         try:
                             clean_v = str(v_str).lower().replace('v', '').strip()
                             return tuple(map(int, clean_v.split('.')))
@@ -1155,61 +1136,67 @@ if check_password():
                             return (0, 0, 0)
 
                     current_app_v = parse_version(APP_VERSION)
-                    
                     df = df[df["Version"].apply(parse_version) <= current_app_v]
-                    # ==========================================
                     
-                    # Sort by Date and Version, then extract unique Versions!
                     df = df.sort_values(by=["Release Date", "Version"], ascending=[False, False])
                     unique_versions = [v for v in df["Version"].unique() if v.strip() != ""]
                     
-                    # 🟢 ADD THESE TWO LINES BACK IN (The Hybrid Feed Split)
                     recent_versions = unique_versions[:3]
                     older_versions = unique_versions[3:]
                    
-                    # Render the most recent 3 versions
+                    # --- RENDER RECENT RELEASES ---
                     for v_val in recent_versions:
-                        # Group by Version instead of Date
                         group = df[df["Version"] == v_val]
-                        
-                        # Grab the date associated with this specific version
                         date_val = group["Release Date"].iloc[0]
                         date_str = pd.to_datetime(date_val).strftime("%Y-%m-%d") if date_val > pd.Timestamp("2000-01-01") else "Archive"
                         
                         st.markdown(f"### 🚀 Update: {date_str} | v{v_val}")
                         
-                        for _, row in group.iterrows():
-                            task = row.get("Feature", "System Update")
-                            category = str(row.get("Category", "General")).strip()
-                            emoji = "🐛" if "bug" in category.lower() else "✨"
+                        # Apply the clean bundling to Production!
+                        version_cats = group["Category"].fillna("Ops").unique().tolist()
+                        batch_cats = sorted(version_cats, key=lambda x: ["Core", "UI", "Bug", "Ops"].index(x) if x in ["Core", "UI", "Bug", "Ops"] else 99)
+                        
+                        for cat in batch_cats:
+                            st.markdown(f"#### {cat_display.get(cat, cat)}")
+                            cat_df = group[group["Category"] == cat]
                             
-                            st.markdown(f"**{emoji} [{category}] {task}**")
-                            st.caption(f"&emsp; *{row['Public Message']}*")
+                            for _, row in cat_df.iterrows():
+                                task = row.get("Feature", "System Update")
+                                pub_msg = row.get("Public Message", "")
+                                st.markdown(f"**• {task}**")
+                                if pd.notna(pub_msg) and str(pub_msg).strip() not in ["", "None"]:
+                                    st.caption(f"&emsp; *{pub_msg}*")
                             st.write("")
                         st.divider()
 
-                    # Render everything else in a dropdown
+                    # --- RENDER ARCHIVED RELEASES ---
                     if len(older_versions) > 0:
                         with st.expander("🕰️ View Older Updates"):
                             for v_val in older_versions:
                                 group = df[df["Version"] == v_val]
-                                
                                 date_val = group["Release Date"].iloc[0]
                                 date_str = pd.to_datetime(date_val).strftime("%Y-%m-%d") if date_val > pd.Timestamp("2000-01-01") else "Archive"
                                 
                                 st.markdown(f"### 🚀 Update: {date_str} | v{v_val}")
                                 
-                                for _, row in group.iterrows():
-                                    task = row.get("Feature", "System Update")
-                                    category = str(row.get("Category", "General")).strip()
-                                    emoji = "🐛" if "bug" in category.lower() else "✨"
-                                    st.markdown(f"**{emoji} [{category}] {task}**")
-                                    st.caption(f"&emsp; *{row['Public Message']}*")
+                                version_cats = group["Category"].fillna("Ops").unique().tolist()
+                                batch_cats = sorted(version_cats, key=lambda x: ["Core", "UI", "Bug", "Ops"].index(x) if x in ["Core", "UI", "Bug", "Ops"] else 99)
+                                
+                                for cat in batch_cats:
+                                    st.markdown(f"#### {cat_display.get(cat, cat)}")
+                                    cat_df = group[group["Category"] == cat]
+                                    
+                                    for _, row in cat_df.iterrows():
+                                        task = row.get("Feature", "System Update")
+                                        pub_msg = row.get("Public Message", "")
+                                        st.markdown(f"**• {task}**")
+                                        if pd.notna(pub_msg) and str(pub_msg).strip() not in ["", "None"]:
+                                            st.caption(f"&emsp; *{pub_msg}*")
                                     st.write("")
                                 st.divider()
-
                 else:
                     st.info("No released updates yet.")
+                    
             except Exception as e:
                 st.error(f"Could not load the changelog: {e}")
 
