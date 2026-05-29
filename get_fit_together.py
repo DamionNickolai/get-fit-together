@@ -55,18 +55,25 @@ st.markdown("""
     header { background-color: transparent !important; }
     header > div { background-color: transparent !important; }
 
-    /* Hide the "Manage app" button at the bottom - target by text content */
+    /* Hide the "Manage app" button using its exact data-testid */
+    [data-testid="manage-app-button"] { display: none !important; }
+
+    /* Hide any other footer/terminal buttons */
+    footer,
     footer button,
     footer [data-testid*="manage"],
     footer [data-testid*="app"],
-    div[data-testid*="stDecoration"] button,
-    [class*="footer"] button {
-        display: none !important;
-    }
-
-    /* Additional targeting for bottom navigation buttons */
-    [role="navigation"] button,
-    nav button {
+    [data-testid*="stDecoration"],
+    [data-testid*="stFooter"],
+    [class*="footer"],
+    [class*="stDecoration"],
+    /* Hide Streamlit branding and profile buttons in bottom right */
+    button[aria-label*="streamlit"],
+    button[aria-label*="profile"],
+    button[aria-label*="user"],
+    /* Hide all buttons that might be in the bottom decoration area */
+    div[class*="bottomRight"] button,
+    div[class*="bottom-right"] button {
         display: none !important;
     }
 
