@@ -8,29 +8,16 @@ import hashlib
 # ==========================================
 # 🟢 MASTER UI STYLESHEET (Native App & Clean Forms)
 # ==========================================
-# This completely hides Streamlit's default web branding, optimizes mobile padding,
-# and cleans up the default input forms to make the app feel native.
 master_css = """
     <style>
-    /* --- 1. NATIVE APP LOOK (Branding & Layout) --- */
-    
-    /* Hide the top header (Deploy button, hamburger menu, and colored line) */
-    [data-testid="stHeader"] { 
-        display: none; 
-    }
-    
-    /* Hide the 'Made with Streamlit' footer */
-    footer { 
-        visibility: hidden; 
-    }
-    
-    /* Remove the massive block of empty padding at the top of the mobile screen */
+    /* --- 1. NATIVE APP TOUCH FEEL --- */
+    /* Remove standard top padding so it sits flush like a native app */
     .block-container {
-        padding-top: 2rem !important;
+        padding-top: 1rem !important;
         padding-bottom: 1rem !important;
     }
     
-    /* Disable text selection/highlighting (Makes buttons feel like native app buttons) */
+    /* Disable text selection/highlighting for buttons */
     * {
         -webkit-touch-callout: none;
         -webkit-user-select: none;
@@ -40,7 +27,7 @@ master_css = """
         user-select: none;
     }
     
-    /* Re-enable text selection for actual input fields so you can still type notes */
+    /* Re-enable text selection for actual input fields */
     input, textarea {
         -webkit-user-select: text !important;
         -moz-user-select: text !important;
@@ -48,8 +35,7 @@ master_css = """
         user-select: text !important;
     }
 
-    /* --- 2. CLEAN FORMS (Input formatting) --- */
-    
+    /* --- 2. CLEAN FORMS --- */
     /* Hides the "Press Enter to submit form" text globally */
     div[data-testid="InputInstructions"] { 
         display: none !important; 
@@ -63,8 +49,10 @@ master_css = """
     }
     
     /* Hides Streamlit's custom +/- buttons on number inputs */
-    [data-testid="stNumberInputStepUp"] { display: none !important; }
-    [data-testid="stNumberInputStepDown"] { display: none !important; }
+    [data-testid="stNumberInputStepUp"], 
+    [data-testid="stNumberInputStepDown"] { 
+        display: none !important; 
+    }
     </style>
 """
 st.markdown(master_css, unsafe_allow_html=True)
