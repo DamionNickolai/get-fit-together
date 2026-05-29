@@ -18,5 +18,10 @@ Ctrl + s
 AUTO PUSH FROM LOCAL TO CLOUD (Change Message):
 python deploy.py "commit message"
 
+Push a small fix to dev staging:
+git add auth.py
+git commit --amend --no-edit
+git push --force origin dev
+
 ENTER VIRTUAL ENV:
 .\venv\Scripts\activate
