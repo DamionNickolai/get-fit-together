@@ -55,11 +55,24 @@ st.markdown("""
     header { background-color: transparent !important; }
     header > div { background-color: transparent !important; }
 
-    /* Ensure sidebar toggle remains visible */
-    [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; }
-    button[aria-label*="collapse"] { display: block !important; visibility: visible !important; }
-    button[aria-label*="expand"] { display: block !important; visibility: visible !important; }
     </style>
+    <script>
+    // Hide the "Manage app" button at the outer page level
+    function hideManageAppButton() {
+        const button = document.querySelector('[data-testid="manage-app-button"]');
+        if (button) {
+            button.style.display = 'none';
+            button.remove();
+        }
+    }
+
+    // Hide it immediately
+    hideManageAppButton();
+
+    // Watch for changes and hide it if it reappears
+    const observer = new MutationObserver(hideManageAppButton);
+    observer.observe(document.body, { childList: true, subtree: true });
+    </script>
 """, unsafe_allow_html=True)
 
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
