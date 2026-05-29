@@ -1,9 +1,1 @@
-/* Hide the "Manage app" button using its exact data-testid */
-[data-testid="manage-app-button"] {
-    display: none !important;
-}
-
-/* Hide button using class selector as fallback */
-button[class*="_terminalButton"] {
-    display: none !important;
-}
+/* Streamlit custom CSS - currently unused */

@@ -59,33 +59,7 @@ st.markdown("""
     [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; }
     button[aria-label*="collapse"] { display: block !important; visibility: visible !important; }
     button[aria-label*="expand"] { display: block !important; visibility: visible !important; }
-
     </style>
-    <script>
-    // Try accessing parent window (works if same-origin)
-    function destroyButtonEveryway() {
-        // Method 1: Access from parent window
-        try {
-            if (window.parent !== window) {
-                const btn = window.parent.document.querySelector('[data-testid="manage-app-button"]');
-                if (btn) {
-                    btn.parentElement.removeChild(btn);
-                    return;
-                }
-            }
-        } catch (e) {
-            console.log('Parent access blocked:', e.message);
-        }
-
-        // Method 2: Local iframe access (fallback)
-        const local = document.querySelector('[data-testid="manage-app-button"]');
-        if (local) local.parentElement.removeChild(local);
-    }
-
-    destroyButtonEveryway();
-    setTimeout(destroyButtonEveryway, 100);
-    setTimeout(destroyButtonEveryway, 500);
-    </script>
 """, unsafe_allow_html=True)
 
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
