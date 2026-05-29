@@ -5,6 +5,70 @@ import datetime
 import plotly.express as px
 import hashlib 
 
+# ==========================================
+# 🟢 MASTER UI STYLESHEET (Native App & Clean Forms)
+# ==========================================
+# This completely hides Streamlit's default web branding, optimizes mobile padding,
+# and cleans up the default input forms to make the app feel native.
+master_css = """
+    <style>
+    /* --- 1. NATIVE APP LOOK (Branding & Layout) --- */
+    
+    /* Hide the top header (Deploy button, hamburger menu, and colored line) */
+    [data-testid="stHeader"] { 
+        display: none; 
+    }
+    
+    /* Hide the 'Made with Streamlit' footer */
+    footer { 
+        visibility: hidden; 
+    }
+    
+    /* Remove the massive block of empty padding at the top of the mobile screen */
+    .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 1rem !important;
+    }
+    
+    /* Disable text selection/highlighting (Makes buttons feel like native app buttons) */
+    * {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+    }
+    
+    /* Re-enable text selection for actual input fields so you can still type notes */
+    input, textarea {
+        -webkit-user-select: text !important;
+        -moz-user-select: text !important;
+        -ms-user-select: text !important;
+        user-select: text !important;
+    }
+
+    /* --- 2. CLEAN FORMS (Input formatting) --- */
+    
+    /* Hides the "Press Enter to submit form" text globally */
+    div[data-testid="InputInstructions"] { 
+        display: none !important; 
+    }
+    
+    /* Hides the standard web browser number arrows */
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { 
+        -webkit-appearance: none; 
+        margin: 0; 
+    }
+    
+    /* Hides Streamlit's custom +/- buttons on number inputs */
+    [data-testid="stNumberInputStepUp"] { display: none !important; }
+    [data-testid="stNumberInputStepDown"] { display: none !important; }
+    </style>
+"""
+st.markdown(master_css, unsafe_allow_html=True)
+
 # 🛑 1. PAGE CONFIG MUST BE FIRST
 st.set_page_config(
     page_title="Get Fit Together",
@@ -29,25 +93,6 @@ from workouts import ROUTINES
 # 🟢 3. APP VERSIONING
 APP_VERSION = "1.4.0"
 st.session_state["APP_VERSION"] = APP_VERSION
-
-# ==========================================
-# 🛠️ STATIC UI STYLESHEET (Runs instantly)
-# ==========================================
-st.markdown("""
-    <style>
-    /* Hides the "Press Enter to submit form" text globally */
-    div[data-testid="InputInstructions"] { display: none !important; }
-    
-    /* Hides the standard web browser number arrows */
-    input[type=number]::-webkit-inner-spin-button, 
-    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-    
-    /* Hides Streamlit's custom +/- buttons */
-    [data-testid="stNumberInputStepUp"] { display: none !important; }
-    [data-testid="stNumberInputStepDown"] { display: none !important; }
-    </style>
-""", unsafe_allow_html=True)
-
 
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
 # 🟢 THE BOUNCER: This function checks your URL, logs you in, AND fetches your colors!
