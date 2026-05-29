@@ -62,23 +62,29 @@ st.markdown("""
 
     </style>
     <script>
-    // Nuclear approach: hide manage-app-button with multiple timeouts
-    function destroyManageAppButton() {
-        const btn = document.querySelector('[data-testid="manage-app-button"]');
-        if (btn) {
-            btn.parentElement.removeChild(btn);
+    // Try accessing parent window (works if same-origin)
+    function destroyButtonEveryway() {
+        // Method 1: Access from parent window
+        try {
+            if (window.parent !== window) {
+                const btn = window.parent.document.querySelector('[data-testid="manage-app-button"]');
+                if (btn) {
+                    btn.parentElement.removeChild(btn);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.log('Parent access blocked:', e.message);
         }
-        const byClass = document.querySelector('button[class*="_terminalButton"]');
-        if (byClass) {
-            byClass.parentElement.removeChild(byClass);
-        }
+
+        // Method 2: Local iframe access (fallback)
+        const local = document.querySelector('[data-testid="manage-app-button"]');
+        if (local) local.parentElement.removeChild(local);
     }
 
-    // Run at multiple intervals to catch late renders
-    destroyManageAppButton();
-    setTimeout(destroyManageAppButton, 100);
-    setTimeout(destroyManageAppButton, 500);
-    setTimeout(destroyManageAppButton, 1000);
+    destroyButtonEveryway();
+    setTimeout(destroyButtonEveryway, 100);
+    setTimeout(destroyButtonEveryway, 500);
     </script>
 """, unsafe_allow_html=True)
 
