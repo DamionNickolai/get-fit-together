@@ -1,6 +1,8 @@
 # Streamlit Secrets (NEVER PUSH THIS)
 .streamlit/secrets.toml
 
+.env
+
 # Python Virtual Environments
 .venv/
 venv/

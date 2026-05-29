@@ -83,8 +83,13 @@ if check_password():
     st.markdown(f"""
         <style>
         .stApp {{ background-color: {page_bg_color}; color: white; }}
-        [data-testid="stSidebar"] {{ background-color: {side_bg} !important; opacity: 1 !important; }}
+        [data-testid="stSidebar"] {{ background-color: {side_bg} !important; opacity: 1 !important; overflow: visible !important; }}
         .stTabs [data-baseweb="tab"] {{ color: white !important; }}
+        
+        /* Fix dropdown overflow on mobile/WebView */
+        [data-testid="stSidebar"] [data-baseweb="select"] {{ z-index: 9999 !important; }}
+        [role="listbox"] {{ z-index: 9999 !important; max-height: 300px !important; overflow-y: auto !important; }}
+        [data-testid="stSidebar"] > div {{ overflow: visible !important; }}
         </style>
     """, unsafe_allow_html=True)
     
