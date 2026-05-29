@@ -10,13 +10,35 @@ import hashlib
 # ==========================================
 master_css = """
     <style>
-    /* --- 1. NATIVE APP TOUCH FEEL --- */
-    /* Remove standard top padding so it sits flush like a native app */
+    /* --- 1. CLEARING THE ANDROID STATUS BAR --- */
+    /* Pushes the sidebar arrow down 45px so it clears your phone's time/battery icons */
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"] {
+        top: 45px !important; 
+        left: 15px !important;
+        background-color: rgba(255, 255, 255, 0.1) !important; /* Slight background so it's easy to tap */
+        border-radius: 8px !important;
+        padding: 5px !important;
+    }
+
+    /* Pushes the main app content down so it isn't crammed against the top edge */
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 3.5rem !important;
         padding-bottom: 1rem !important;
     }
-    
+
+    /* --- 2. THE BADGE NUKER (Aggressive Wildcard) --- */
+    /* Kills the red creator badge using a wildcard selector */
+    .viewerBadge_container, 
+    .viewerBadge_link_div, 
+    #viewerBadge_container_0,
+    [class*="viewerBadge"] { 
+        display: none !important; 
+        visibility: hidden !important;
+        opacity: 0 !important;
+    }
+
+    /* --- 3. NATIVE APP TOUCH FEEL --- */
     /* Disable text selection/highlighting for buttons */
     * {
         -webkit-touch-callout: none;
@@ -35,7 +57,7 @@ master_css = """
         user-select: text !important;
     }
 
-    /* --- 2. CLEAN FORMS --- */
+    /* --- 4. CLEAN FORMS --- */
     /* Hides the "Press Enter to submit form" text globally */
     div[data-testid="InputInstructions"] { 
         display: none !important; 
