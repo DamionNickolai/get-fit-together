@@ -37,14 +37,28 @@ st.markdown("""
     <style>
     /* Hides the "Press Enter to submit form" text globally */
     div[data-testid="InputInstructions"] { display: none !important; }
-    
+
     /* Hides the standard web browser number arrows */
-    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-    
+
     /* Hides Streamlit's custom +/- buttons */
     [data-testid="stNumberInputStepUp"] { display: none !important; }
     [data-testid="stNumberInputStepDown"] { display: none !important; }
+
+    /* Hide toolbar buttons: Share, Edit, GitHub, Favorite, Hamburger menu */
+    header [data-testid="stToolbarActionButton"] { display: none !important; }
+    header button[kind="secondary"] { display: none !important; }
+    header button[aria-label*="menu"] { display: none !important; }
+
+    /* Hide the "Manage app" button at the bottom */
+    footer button { display: none !important; }
+    footer [data-testid*="manage"] { display: none !important; }
+
+    /* Ensure sidebar toggle remains visible */
+    [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; }
+    button[aria-label*="collapse"] { display: block !important; visibility: visible !important; }
+    button[aria-label*="expand"] { display: block !important; visibility: visible !important; }
     </style>
 """, unsafe_allow_html=True)
 
