@@ -5,80 +5,6 @@ import datetime
 import plotly.express as px
 import hashlib 
 
-# ==========================================
-# 🟢 MASTER UI STYLESHEET (Native App & Clean Forms)
-# ==========================================
-master_css = """
-    <style>
-    /* --- 1. CLEARING THE ANDROID STATUS BAR --- */
-    /* Pushes the sidebar arrow down 45px so it clears your phone's time/battery icons */
-    [data-testid="collapsedControl"],
-    [data-testid="stSidebarCollapsedControl"] {
-        top: 45px !important; 
-        left: 15px !important;
-        background-color: rgba(255, 255, 255, 0.1) !important; /* Slight background so it's easy to tap */
-        border-radius: 8px !important;
-        padding: 5px !important;
-    }
-
-    /* Pushes the main app content down so it isn't crammed against the top edge */
-    .block-container {
-        padding-top: 3.5rem !important;
-        padding-bottom: 1rem !important;
-    }
-
-    /* --- 2. THE BADGE NUKER (Aggressive Wildcard) --- */
-    /* Kills the red creator badge using a wildcard selector */
-    .viewerBadge_container, 
-    .viewerBadge_link_div, 
-    #viewerBadge_container_0,
-    [class*="viewerBadge"] { 
-        display: none !important; 
-        visibility: hidden !important;
-        opacity: 0 !important;
-    }
-
-    /* --- 3. NATIVE APP TOUCH FEEL --- */
-    /* Disable text selection/highlighting for buttons */
-    * {
-        -webkit-touch-callout: none;
-        -webkit-user-select: none;
-        -khtml-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
-        user-select: none;
-    }
-    
-    /* Re-enable text selection for actual input fields */
-    input, textarea {
-        -webkit-user-select: text !important;
-        -moz-user-select: text !important;
-        -ms-user-select: text !important;
-        user-select: text !important;
-    }
-
-    /* --- 4. CLEAN FORMS --- */
-    /* Hides the "Press Enter to submit form" text globally */
-    div[data-testid="InputInstructions"] { 
-        display: none !important; 
-    }
-    
-    /* Hides the standard web browser number arrows */
-    input[type=number]::-webkit-inner-spin-button, 
-    input[type=number]::-webkit-outer-spin-button { 
-        -webkit-appearance: none; 
-        margin: 0; 
-    }
-    
-    /* Hides Streamlit's custom +/- buttons on number inputs */
-    [data-testid="stNumberInputStepUp"], 
-    [data-testid="stNumberInputStepDown"] { 
-        display: none !important; 
-    }
-    </style>
-"""
-st.markdown(master_css, unsafe_allow_html=True)
-
 # 🛑 1. PAGE CONFIG MUST BE FIRST
 st.set_page_config(
     page_title="Get Fit Together",
@@ -103,6 +29,24 @@ from workouts import ROUTINES
 # 🟢 3. APP VERSIONING
 APP_VERSION = "1.4.0"
 st.session_state["APP_VERSION"] = APP_VERSION
+
+# ==========================================
+# 🛠️ STATIC UI STYLESHEET (Runs instantly)
+# ==========================================
+st.markdown("""
+    <style>
+    /* Hides the "Press Enter to submit form" text globally */
+    div[data-testid="InputInstructions"] { display: none !important; }
+    
+    /* Hides the standard web browser number arrows */
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    
+    /* Hides Streamlit's custom +/- buttons */
+    [data-testid="stNumberInputStepUp"] { display: none !important; }
+    [data-testid="stNumberInputStepDown"] { display: none !important; }
+    </style>
+""", unsafe_allow_html=True)
 
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
 # 🟢 THE BOUNCER: This function checks your URL, logs you in, AND fetches your colors!
@@ -129,8 +73,6 @@ if check_password():
         .stTabs [data-baseweb="tab"] {{ color: white !important; }}
         </style>
     """, unsafe_allow_html=True)
-
-    # ... [The rest of your app UI starts here (Tabs, Sidebar, etc.)] ...
     
     # 📡 THE BUG RADAR (Only alerts if you are the developer)
     if role == "developer":
