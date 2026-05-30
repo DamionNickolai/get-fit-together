@@ -60,47 +60,24 @@ st.markdown("""
     button[aria-label*="collapse"] { display: block !important; visibility: visible !important; }
     button[aria-label*="expand"] { display: block !important; visibility: visible !important; }
 
-    /* 🟢 WEBVIEW DROPDOWN CLIPPING FIX 🟢 */
-    /* Android WebView popovers get clipped by parent overflow. Solution: Use fixed positioning. */
+    /* 🟢 WEBVIEW DROPDOWN SCROLL FIX 🟢 */
+    /* Android WebView dropdown clipping fix - keep it simple */
     
-    /* Make the popover escape the sidebar by using fixed positioning */
-    [data-baseweb="popover"] {
-        position: fixed !important;
-        z-index: 999999 !important;
-        pointer-events: auto !important;
-    }
-    
-    /* The dropdown menu container */
-    [data-baseweb="popover"] > div {
-        position: fixed !important;
-        z-index: 999999 !important;
-    }
-    
-    /* Dropdown list items - ensure they're scrollable */
+    /* Allow dropdown list to be scrollable */
     [role="listbox"] {
         overflow-y: auto !important;
-        max-height: 400px !important;
+        max-height: 250px !important;
         -webkit-overflow-scrolling: touch !important;
-        position: relative !important;
-        z-index: 999999 !important;
     }
     
-    /* Individual options */
+    /* Ensure options are clickable */
     [role="option"] {
         pointer-events: auto !important;
     }
     
-    /* Select trigger button */
+    /* High z-index for dropdown */
     [data-baseweb="select"] {
-        z-index: 999998 !important;
-    }
-    
-    /* Android WebView: Disable user select to improve touch responsiveness */
-    [data-baseweb="select"],
-    [role="listbox"],
-    [role="option"] {
-        -webkit-user-select: none !important;
-        user-select: none !important;
+        z-index: 10000 !important;
     }
     </style>
 """, unsafe_allow_html=True)
