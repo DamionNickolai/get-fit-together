@@ -37,11 +37,11 @@ st.markdown("""
     <style>
     /* Hides the "Press Enter to submit form" text globally */
     div[data-testid="InputInstructions"] { display: none !important; }
-    
+
     /* Hides the standard web browser number arrows */
-    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-    
+
     /* Hides Streamlit's custom +/- buttons */
     [data-testid="stNumberInputStepUp"] { display: none !important; }
     [data-testid="stNumberInputStepDown"] { display: none !important; }
@@ -59,26 +59,6 @@ st.markdown("""
     [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; }
     button[aria-label*="collapse"] { display: block !important; visibility: visible !important; }
     button[aria-label*="expand"] { display: block !important; visibility: visible !important; }
-
-    /* 🟢 WEBVIEW DROPDOWN SCROLL FIX 🟢 */
-    /* Android WebView dropdown clipping fix - keep it simple */
-    
-    /* Allow dropdown list to be scrollable */
-    [role="listbox"] {
-        overflow-y: auto !important;
-        max-height: 250px !important;
-        -webkit-overflow-scrolling: touch !important;
-    }
-    
-    /* Ensure options are clickable */
-    [role="option"] {
-        pointer-events: auto !important;
-    }
-    
-    /* High z-index for dropdown */
-    [data-baseweb="select"] {
-        z-index: 10000 !important;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -103,7 +83,7 @@ if check_password():
     st.markdown(f"""
         <style>
         .stApp {{ background-color: {page_bg_color} !important; color: white; }}
-        [data-testid="stSidebar"] {{ background-color: {side_bg} !important; }}
+        [data-testid="stSidebar"] {{ background-color: {side_bg} !important; opacity: 1 !important; }}
         .stTabs [data-baseweb="tab"] {{ color: white !important; }}
         </style>
     """, unsafe_allow_html=True)
