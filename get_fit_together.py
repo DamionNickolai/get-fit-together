@@ -59,54 +59,48 @@ st.markdown("""
     [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; }
     button[aria-label*="collapse"] { display: block !important; visibility: visible !important; }
     button[aria-label*="expand"] { display: block !important; visibility: visible !important; }
-    
-    /* 🟢 CRITICAL: Prevent sidebar from clipping dropdowns */
-    [data-testid="stSidebar"] {
-        overflow: visible !important;
-    }
-    
-    [data-testid="stSidebar"] > div {
-        overflow: visible !important;
-    }
-    
-    [data-testid="stSidebar"] > div > div {
-        overflow: visible !important;
-    }
 
-    /* 🟢 WEBVIEW DROPDOWN SCROLL FIX 🟢 */
-    /* The core issue: dropdowns are being clipped by the sidebar. */
-    /* Solution: Use high z-index and ensure popover escapes the sidebar */
+    /* 🟢 WEBVIEW DROPDOWN CLIPPING FIX 🟢 */
+    /* Android WebView popovers get clipped by parent overflow. Solution: Use fixed positioning. */
     
-    /* Make dropdown popover escape sidebar boundaries */
+    /* Make the popover escape the sidebar by using fixed positioning */
     [data-baseweb="popover"] {
-        overflow: visible !important;
-        z-index: 99999 !important;
+        position: fixed !important;
+        z-index: 999999 !important;
+        pointer-events: auto !important;
     }
     
-    /* The actual dropdown menu list */
-    [role="listbox"],
-    ul[role="listbox"] {
+    /* The dropdown menu container */
+    [data-baseweb="popover"] > div {
+        position: fixed !important;
+        z-index: 999999 !important;
+    }
+    
+    /* Dropdown list items - ensure they're scrollable */
+    [role="listbox"] {
         overflow-y: auto !important;
-        max-height: 350px !important;
+        max-height: 400px !important;
         -webkit-overflow-scrolling: touch !important;
-        z-index: 99999 !important;
         position: relative !important;
+        z-index: 999999 !important;
     }
     
-    /* Individual dropdown options should be visible */
+    /* Individual options */
     [role="option"] {
-        overflow: visible !important;
+        pointer-events: auto !important;
     }
     
-    /* Android WebView: Force hardware acceleration to prevent clipping */
+    /* Select trigger button */
     [data-baseweb="select"] {
-        z-index: 99999 !important;
-        -webkit-transform: translateZ(0) !important;
+        z-index: 999998 !important;
     }
     
-    /* Popover backdrop/container - don't let it clip */
-    [data-baseweb="popover"] > * {
-        overflow: visible !important;
+    /* Android WebView: Disable user select to improve touch responsiveness */
+    [data-baseweb="select"],
+    [role="listbox"],
+    [role="option"] {
+        -webkit-user-select: none !important;
+        user-select: none !important;
     }
     </style>
 """, unsafe_allow_html=True)
