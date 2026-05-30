@@ -59,22 +59,54 @@ st.markdown("""
     [data-testid="stSidebarCollapsedControl"] { display: block !important; visibility: visible !important; }
     button[aria-label*="collapse"] { display: block !important; visibility: visible !important; }
     button[aria-label*="expand"] { display: block !important; visibility: visible !important; }
-
-    /* 🟢 WEBVIEW DROPDOWN SCROLL FIX 🟢 */
-    /* Forces Android WebView to allow vertical scrolling inside Streamlit select boxes */
-    div[data-baseweb="popover"] > div,
-    ul[role="listbox"] {
-        -webkit-overflow-scrolling: touch !important; /* Enables hardware momentum scrolling */
-        overscroll-behavior-y: contain !important;    /* Traps the scroll inside the dropdown */
-        touch-action: pan-y !important;               /* Tells the WebView to only expect vertical swipes here */
-        max-height: 300px !important;                 /* Ensure dropdown doesn't expand too large */
-        overflow-y: auto !important;                  /* Enable scrollbar if needed */
+    
+    /* 🟢 CRITICAL: Prevent sidebar from clipping dropdowns */
+    [data-testid="stSidebar"] {
+        overflow: visible !important;
     }
     
-    /* Additional Android/WebView specific fixes */
+    [data-testid="stSidebar"] > div {
+        overflow: visible !important;
+    }
+    
+    [data-testid="stSidebar"] > div > div {
+        overflow: visible !important;
+    }
+
+    /* 🟢 WEBVIEW DROPDOWN SCROLL FIX 🟢 */
+    /* The core issue: dropdowns are being clipped by the sidebar. */
+    /* Solution: Use high z-index and ensure popover escapes the sidebar */
+    
+    /* Make dropdown popover escape sidebar boundaries */
+    [data-baseweb="popover"] {
+        overflow: visible !important;
+        z-index: 99999 !important;
+    }
+    
+    /* The actual dropdown menu list */
+    [role="listbox"],
+    ul[role="listbox"] {
+        overflow-y: auto !important;
+        max-height: 350px !important;
+        -webkit-overflow-scrolling: touch !important;
+        z-index: 99999 !important;
+        position: relative !important;
+    }
+    
+    /* Individual dropdown options should be visible */
+    [role="option"] {
+        overflow: visible !important;
+    }
+    
+    /* Android WebView: Force hardware acceleration to prevent clipping */
     [data-baseweb="select"] {
-        -webkit-user-select: none !important;
-        -webkit-touch-callout: none !important;
+        z-index: 99999 !important;
+        -webkit-transform: translateZ(0) !important;
+    }
+    
+    /* Popover backdrop/container - don't let it clip */
+    [data-baseweb="popover"] > * {
+        overflow: visible !important;
     }
     </style>
 """, unsafe_allow_html=True)
