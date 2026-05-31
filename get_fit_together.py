@@ -533,27 +533,10 @@ if check_password():
                                 st.markdown(f"<div style='font-size: 13px; line-height: 1.4; margin-bottom: 4px;'>• {ex}</div>", unsafe_allow_html=True)
 
     # ------------------------------------------
-    # 🏋️ TAB 2: LOG A SESSION
+    # 🏋️ TAB 2: LOG A SESSION (FLATTENED UI)
     # ------------------------------------------    
     with tab2:
         st.subheader("🏋️ Log Your Workout")
-        
-        # 🟢 NEW PHASE SELECTION MAPPER
-        phase_options = ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Daily Core", "TRX Suspension Mastery", "TRX Rip Trainer Power", "Open Gym"]
-        selected_short_phase = st.selectbox("Phase", options=phase_options, index=0)
-        
-        phase_map = {
-            "Phase 1": "Phase 1: Foundation & Endurance",
-            "Phase 2": "Phase 2: Hypertrophy (Muscle Building)",
-            "Phase 3": "Phase 3: Strength & Power",
-            "Phase 4": "Phase 4: Metabolic Conditioning",
-            "Daily Core": "Daily Core",
-            "TRX Suspension Mastery": "TRX Suspension Mastery",
-            "TRX Rip Trainer Power": "TRX Rip Trainer Power",
-            "Open Gym": "Open Gym"
-        }
-        
-        selected_q = phase_map[selected_short_phase]
         
         # 🟢 THE TIMEZONE FIX
         from zoneinfo import ZoneInfo
@@ -562,72 +545,64 @@ if check_password():
         
         date_input = st.date_input("Date", local_today)
         
-        # 🔄 DATA ROUTING ENGINE
-        details_prefix = ""
-        show_weight_box = False
+        # 🟢 BUILD THE ULTIMATE MASTER ACTIVITY LIST
+        master_exercises = []
         skip_phrases = ["Cycle continuously", "20-Minute AMRAP Session", "resting only as needed"]
         
-        if selected_q != "Open Gym":
-            selected_w = st.selectbox("Select Session", list(ROUTINES[selected_q]["Workouts"].keys()))
-            
-            if "Outdoor" in selected_w:
-                activity_value = "Outdoor Activity" 
-                details_prefix = f"🌲 [{selected_q} - Outdoor] "
-            else:
-                raw_exercises = ROUTINES[selected_q]["Workouts"][selected_w]
-                clean_exercises = []
-                for ex in raw_exercises:
-                    if any(phrase in ex for phrase in skip_phrases): continue
-                    clean_name = ex.split(":")[0].strip()
-                    if clean_name.startswith("- "): clean_name = clean_name[2:]
-                    clean_name = clean_name.lstrip("0123456789 ")
-                    if clean_name: clean_exercises.append(clean_name)
-                    
-                activity_value = st.selectbox("Exercise / Activity", clean_exercises)
-                short_w_name = selected_w.split(":")[0]
-                details_prefix = f"🏋️ [{selected_q} - {short_w_name}] "
-                
-        else:
-            custom_session = st.selectbox("Session Type", ["A La Carte", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching", "Body Weight Only"])
-            if custom_session == "Body Weight Only":
-                show_weight_box = True
-                activity_value = "Body Weight Only"
-                details_prefix = ""
-            elif custom_session in ["Mountain Biking", "Hiking", "Walking", "Mobility / Stretching"]:
-                activity_value = custom_session
-                details_prefix = f"📋 [Open Gym] "
-            else:
-                master_exercises = []
-                for q_key, q_data in ROUTINES.items():
-                    for w_key, ex_list in q_data["Workouts"].items():
-                        if "Outdoor" not in w_key:
-                            for ex in ex_list:
-                                clean_name = ex.split(":")[0].strip()
-                                if clean_name.startswith("- "): clean_name = clean_name[2:]
-                                clean_name = clean_name.lstrip("0123456789 ")
-                                if clean_name not in master_exercises and "AMRAP" not in clean_name and "Cycle continuously" not in clean_name and "⏱️" not in clean_name:
-                                    master_exercises.append(clean_name)
-                
-                master_exercises.sort()
-                if "Deadlift" not in master_exercises: master_exercises.append("Deadlift")
-                master_exercises.append("Other (Specify in Notes)")
-                
-                activity_value = st.selectbox("Exercise / Activity", master_exercises)
-                details_prefix = "🏋️ [Open Gym - A La Carte] "        
-
-        if show_weight_box:
-            weight_input = st.text_input("Body Weight (lbs)", key=f"bw_{reset_id}")
+        # 1. Extract every unique lifting exercise from your ROUTINES dictionary
+        for q_key, q_data in ROUTINES.items():
+            for w_key, ex_list in q_data["Workouts"].items():
+                if "Outdoor" not in w_key:
+                    for ex in ex_list:
+                        if any(phrase in ex for phrase in skip_phrases): continue
+                        clean_name = ex.split(":")[0].strip()
+                        if clean_name.startswith("- "): clean_name = clean_name[2:]
+                        clean_name = clean_name.lstrip("0123456789 ")
+                        
+                        # Only add it if it's not already in the list
+                        if clean_name and clean_name not in master_exercises and "AMRAP" not in clean_name and "⏱️" not in clean_name:
+                            master_exercises.append(clean_name)
+        
+        if "Deadlift" not in master_exercises: master_exercises.append("Deadlift")
+        
+        # 2. THE FIX: Alphabetize the standard lifting exercises FIRST
+        master_exercises.sort()
+        
+        # 3. Append custom/lifestyle options to the very bottom
+        extra_options = [
+            "Mountain Biking", 
+            "Hiking", 
+            "Walking", 
+            "Mobility / Stretching", 
+            "Body Weight Only", 
+            "Other (Specify in Notes)"
+        ]
+        for opt in extra_options:
+            if opt not in master_exercises:
+                master_exercises.append(opt)
+        
+        # 🟢 THE DROPDOWN HYPOTHESIS TEST
+        activity_value = st.selectbox(
+            "Select Activity", 
+            options=master_exercises,
+            label_visibility="collapsed"
+        )
+        
+        # 🔄 FORM ROUTING LOGIC
+        # Determine if we should hide the weight box
+        is_bodyweight = (activity_value in BODYWEIGHT_ONLY_EXERCISES) or (activity_value in ["Body Weight Only", "Mobility / Stretching"])
+        
+        # Determine if we show sets/reps at all
+        non_lifting = ["Body Weight Only", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching", "Other (Specify in Notes)"]
+        show_lift_stats = activity_value not in non_lifting
+        
+        # Ask for Body Weight if they specifically chose a bodyweight session
+        if activity_value == "Body Weight Only":
+            weight_input = st.text_input("Current Body Weight (lbs)", key=f"bw_{reset_id}")
         else:
             weight_input = ""
 
-        if selected_q == "Open Gym":
-            non_lifting = ["Body Weight Only", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching"]
-            show_lift_stats = custom_session not in non_lifting
-        else:
-            show_lift_stats = "Outdoor" not in selected_w and "Cycle continuously" not in activity_value
-            
-        structured_log = ""
-
+        # 📝 HISTORICAL STATS (Last Time they did this specific exercise)
         if show_lift_stats:
             st.markdown("### 📝 Lift Tracking Stats")
             if not log_df.empty and "User" in log_df.columns and "Activity" in log_df.columns:
@@ -646,10 +621,8 @@ if check_password():
                     </div>
                     """, unsafe_allow_html=True)
 
+        # 💾 THE SUBMIT FORM
         with st.form(key=f"activity_log_form_{reset_id}"):
-            is_trx_phase = selected_q in ["TRX Suspension Mastery", "TRX Rip Trainer Power"]
-            is_bodyweight = (activity_value in BODYWEIGHT_ONLY_EXERCISES) or is_trx_phase
-            
             if show_lift_stats:
                 cols = st.columns(2 if is_bodyweight else 3) 
                 with cols[0]: input_sets = st.text_input("Sets", key=f"sets_{reset_id}")
@@ -664,7 +637,9 @@ if check_password():
             extra_notes = st.text_input("Notes / Explanation", placeholder="Optional: Provide any details...", key=f"notes_{reset_id}")
             submit_log = st.form_submit_button("💾 Log Activity", type="primary", use_container_width=True)
 
+        # 📤 DATABASE SYNC
         if submit_log:
+            structured_log = ""
             if input_sets.strip() or input_reps.strip() or (not is_bodyweight and input_weight_lifted.strip()):
                 try:
                     sets_val = int(input_sets) if input_sets.strip() else 0
@@ -679,15 +654,13 @@ if check_password():
                     pass
 
             if extra_notes.strip():
-                user_details = f"{structured_log}- {extra_notes.strip()}" if structured_log else extra_notes.strip()
+                final_details = f"{structured_log}- {extra_notes.strip()}" if structured_log else extra_notes.strip()
             else:
-                user_details = structured_log.strip()
-                
-            final_details = f"{details_prefix}{user_details}" if details_prefix else user_details
+                final_details = structured_log.strip()
 
             if database_locked:
                 st.error("Database connection is currently unstable. Please refresh the page so we don't overwrite your data.")
-            elif not user_details.strip() and "Outdoor" not in final_details:
+            elif not final_details.strip() and activity_value not in non_lifting:
                 st.warning("Please add some workout details before submitting!")
             else:
                 with st.spinner("Syncing to Supabase Cloud..."):

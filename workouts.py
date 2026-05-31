@@ -4,7 +4,7 @@ ROUTINES = {
         "Workouts": {
             "Workout A: Upper Body & Core": [
                 "Seated Cable Rows ( Low Pulley): 3 sets x 12 reps",
-                "Incline Smith Machine Press: 3 sets x 10 reps",
+                "Smith Machine Incline Bench Press: 3 sets x 10 reps",
                 "Cable Tricep Pushdowns ( High Pulley): 3 sets x 15 reps",
                 "Dumbbell Bicep Curls (Free Weights): 3 sets x 12 reps",
                 "Kettlebell Russian Twists: 3 sets x 20 reps"
@@ -33,7 +33,7 @@ ROUTINES = {
         "Focus": "Increasing volume to build lean muscle and raise metabolic rate. Rest: 45-60s.",
         "Workouts": {
             "Workout A: Push Day (Chest/Shoulders/Triceps)": [
-                "Flat Smith Machine Press: 4 sets x 8-10 reps",
+                "Smith Machine Bench Press: 4 sets x 8-10 reps",
                 "Seated Dumbbell Shoulder Press: 3 sets x 10 reps",
                 "Cable Crossovers ( Dual Pulleys): 3 sets x 12 reps",
                 "Overhead Tricep Extensions: 3 sets x 12 reps"
