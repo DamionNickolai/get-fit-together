@@ -11,15 +11,23 @@ quick save:
 Ctrl + s
 
 AUTO PUSH FROM LOCAL TO CLOUD (Change Message):
-python deploy.py "The Webview Scroll Demon"
+python deploy.py "commit message"
+python push_to_dev.py "sidebar and tab swap"
+python pusht_to_prod.py "commit message"
 
 Push a small fix to dev staging:
 git add auth.py
 git commit --amend --no-edit
 git push --force origin dev
 
+Create virtual env:
+python -m venv venv
+
 ENTER VIRTUAL ENV:
 .\venv\Scripts\activate
+
+Install packages:
+pip install -r requirements.txt
 
 Run dev app:
 python -m streamlit run get_fit_together.py

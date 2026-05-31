@@ -27,7 +27,7 @@ from database import check_and_bulk_log_garmin_weight, check_and_autolog_garmin_
 from workouts import ROUTINES
 
 # 🟢 3. APP VERSIONING
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 st.session_state["APP_VERSION"] = APP_VERSION
 
 # ==========================================
@@ -196,249 +196,90 @@ if check_password():
         }
 
     # ==========================================
-    #  LOGGING SIDEBAR (Ultra-Clean Input Only)
+    #  ⚡ SIDEBAR: Vitals
     # ==========================================
-    st.sidebar.header("🏋️ Log a Session")
+    st.sidebar.header("⚡ Vitals")
     
-    # 🟢 NEW PHASE SELECTION MAPPER
-    # The user sees the short name, but Python uses the long name for the database
-    phase_options = ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Daily Core", "TRX Suspension Mastery", "TRX Rip Trainer Power", "Open Gym"]
-    selected_short_phase = st.sidebar.selectbox("Phase", options=phase_options, index=0)
-    
-    phase_map = {
-        "Phase 1": "Phase 1: Foundation & Endurance",
-        "Phase 2": "Phase 2: Hypertrophy (Muscle Building)",
-        "Phase 3": "Phase 3: Strength & Power",
-        "Phase 4": "Phase 4: Metabolic Conditioning",
-        "Daily Core": "Daily Core",
-        "TRX Suspension Mastery": "TRX Suspension Mastery",
-        "TRX Rip Trainer Power": "TRX Rip Trainer Power",
-        "Open Gym": "Open Gym"
-    }
-    
-    selected_q = phase_map[selected_short_phase]
-    
-    # 🟢 THE TIMEZONE FIX
-    # Force the app to calculate 'today' based on Central Time, ignoring the server's UTC clock
-    from zoneinfo import ZoneInfo
-    local_tz = ZoneInfo("America/Chicago")
-    local_today = datetime.datetime.now(local_tz).date()
-    
-    date_input = st.sidebar.date_input("Date", local_today)
-    
-    # 🔄 DATA ROUTING ENGINE
-    details_prefix = ""
-    show_weight_box = False
-    
-    # 🟢 List of phrases to OMIT from the Exercise/Activity dropdown
-    skip_phrases = [
-        "Cycle continuously", 
-        "20-Minute AMRAP Session", 
-        "resting only as needed"
-    ]
-    
-    if selected_q != "Open Gym":
-        selected_w = st.sidebar.selectbox("Select Session", list(ROUTINES[selected_q]["Workouts"].keys()))
+    # 🟢 THE VARIABLE FIX: Fetch the goal weight EARLY so the metrics can use it
+    current_goal_response = supabase.table("users").select("goal_weight").eq("username", user).execute()
+    current_goal = 0.0
+    if current_goal_response.data and current_goal_response.data[0].get("goal_weight"):
+        current_goal = float(current_goal_response.data[0]["goal_weight"])
+
+    # 🟢 MANUAL GARMIN TRIGGER (Sidebar Optimized)
+    with st.sidebar.container(border=True):
+        status_color = "green" if st.session_state["garmin_status"] == "Active & Synced" else "orange"
+        st.markdown(f"**Garmin:** :{status_color}[{st.session_state['garmin_status']}]")
         
-        if "Outdoor" in selected_w:
-            activity_value = "Outdoor Activity" 
-            details_prefix = f"🌲 [{selected_q} - Outdoor] "
-        else:
-            # 🟢 OPTIMIZED DYNAMIC EXERCISE GENERATOR
-            raw_exercises = ROUTINES[selected_q]["Workouts"][selected_w]
-            clean_exercises = []
-            
-            for ex in raw_exercises:
-                # 🟢 FILTER: Check if this line is an instructional sentence, not an exercise
-                if any(phrase in ex for phrase in skip_phrases):
-                    continue
-                
-                clean_name = ex.split(":")[0].strip()
-                if clean_name.startswith("- "): clean_name = clean_name[2:]
-                clean_name = clean_name.lstrip("0123456789 ")
-                
-                if clean_name: # Only add if it's not an empty string
-                    clean_exercises.append(clean_name)
-                
-            activity_value = st.sidebar.selectbox("Exercise / Activity", clean_exercises)
-            short_w_name = selected_w.split(":")[0]
-            details_prefix = f"🏋️ [{selected_q} - {short_w_name}] "
-            
-    else:
-        # 🟢 UPGRADED OPEN GYM PHASE
-        custom_session = st.sidebar.selectbox("Session Type", ["A La Carte", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching", "Body Weight Only"])
-        
-        if custom_session == "Body Weight Only":
-            show_weight_box = True
-            activity_value = "Body Weight Only"
-            details_prefix = ""
-        elif custom_session in ["Mountain Biking", "Hiking", "Walking", "Mobility / Stretching"]:
-            activity_value = custom_session
-            details_prefix = f"📋 [Open Gym] "
-        else:
-            master_exercises = []
-            for q_key, q_data in ROUTINES.items():
-                for w_key, ex_list in q_data["Workouts"].items():
-                    if "Outdoor" not in w_key:
-                        for ex in ex_list:
-                            clean_name = ex.split(":")[0].strip()
-                            
-                            # The AMRAP / Bullet point cleaner
-                            if clean_name.startswith("- "): 
-                                clean_name = clean_name[2:]
-                                # 🟢 NEW: Strip any leading numbers and spaces for the A La Carte menu
-                                clean_name = clean_name.lstrip("0123456789 ")
-                            
-                            if clean_name not in master_exercises and "AMRAP" not in clean_name and "Cycle continuously" not in clean_name and "⏱️" not in clean_name:
-                                master_exercises.append(clean_name)
-            
-            master_exercises.sort()
-            
-            # 🟢 THE DEADLIFT INJECTION
-            if "Deadlift" not in master_exercises:
-                master_exercises.append("Deadlift")
-                
-            master_exercises.append("Other (Specify in Notes)")
-            
-            activity_value = st.sidebar.selectbox("Exercise / Activity", master_exercises)
-            details_prefix = "🏋️ [Open Gym - A La Carte] "
-
-    # 🟢 THE GHOST WIDGET FIX: Create a resetting ID counter
-    if "form_reset" not in st.session_state:
-        st.session_state["form_reset"] = 0
-    reset_id = st.session_state["form_reset"]
-
-    # 2. ⚖️ DYNAMIC WEIGHT DISPLAY
-    if show_weight_box:
-        weight_input = st.sidebar.text_input("Body Weight (lbs)", key=f"bw_{reset_id}")
-    else:
-        weight_input = ""
-
-    # 3. 📝 STRUCTURED LIFT TRACKING (Now with st.form!)
-    if selected_q == "Open Gym":
-        non_lifting = ["Body Weight Only", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching"]
-        show_lift_stats = custom_session not in non_lifting
-    else:
-        show_lift_stats = "Outdoor" not in selected_w and "Cycle continuously" not in activity_value
-        
-    structured_log = ""
-
-    # Keep the "Last Performed" memory outside the form so it displays dynamically
-    if show_lift_stats:
-        st.sidebar.markdown("### 📝 Lift Tracking Stats")
-        
-        if not log_df.empty and "User" in log_df.columns and "Activity" in log_df.columns:
-            past_logs = log_df[(log_df["User"] == user) & (log_df["Activity"] == activity_value)].copy()
-            if not past_logs.empty:
-                past_logs = past_logs.sort_values(by="Date", ascending=False)
-                last_log = past_logs.iloc[0]
-                
-                last_date = last_log["Date"]
-                last_details = str(last_log.get("Details", ""))
-                clean_details = last_details.split("]")[-1].strip() if "]" in last_details else last_details
-                
-                st.sidebar.markdown(f"""
-                <div style="background-color: #1E293B; border: 1px solid #334155; padding: 12px; border-radius: 6px; margin-bottom: 15px;">
-                    <div style="color: #94A3B8; font-size: 13px; margin-bottom: 5px;">💡 <b>Last Time ({last_date})</b></div>
-                    <div style="color: #F8FAFC; font-size: 14px; font-weight: 500;">{clean_details}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-    # 🚀 CREATE THE FORM HERE
-    with st.sidebar.form(key=f"activity_log_form_{reset_id}"):
-        
-        # 🟢 DYNAMIC COLUMNS: Hide weight if it's bodyweight-only
-        # It's bodyweight if it's in the specific list, OR if the whole phase is a TRX phase!
-        is_trx_phase = selected_q in ["TRX Suspension Mastery", "TRX Rip Trainer Power"]
-        is_bodyweight = (activity_value in BODYWEIGHT_ONLY_EXERCISES) or is_trx_phase
-        
-        if show_lift_stats:
-            # Notice we use st.columns instead of st.sidebar.columns inside a form container
-            cols = st.columns(2 if is_bodyweight else 3) 
-            
-            with cols[0]:
-                input_sets = st.text_input("Sets", key=f"sets_{reset_id}")
-            with cols[1]:
-                input_reps = st.text_input("Reps", key=f"reps_{reset_id}")
-                
-            if not is_bodyweight:
-                with cols[2]:
-                    input_weight_lifted = st.text_input("Weight", key=f"wgt_{reset_id}")
-            else:
-                input_weight_lifted = "0" # Force 0 for bodyweight exercises
-        else:
-            # Set defaults if we aren't lifting
-            input_sets, input_reps, input_weight_lifted = "", "", ""
-
-        # 4. 📝 UNIVERSAL NOTES BOX (Inside the form)
-        extra_notes = st.text_input("Notes / Explanation", placeholder="Optional: Provide any details...", key=f"notes_{reset_id}")
-
-        # 5. SUBMIT BUTTON (This replaces your previous st.sidebar.button)
-        submit_log = st.form_submit_button("💾 Log Activity", type="primary", width='stretch')
-
-
-    # 🔄 6. DATABASE SYNC LOGIC (Triggers only when the form is submitted)
-    if submit_log:
-        
-        # Build the structured string now that we have locked-in form data
-        if input_sets.strip() or input_reps.strip() or (not is_bodyweight and input_weight_lifted.strip()):
-            try:
-                sets_val = int(input_sets) if input_sets.strip() else 0
-                reps_val = int(input_reps) if input_reps.strip() else 0
-                weight_val = float(input_weight_lifted) if input_weight_lifted.strip() else 0.0
-                
-                if is_bodyweight:
-                    structured_log = f"{sets_val} Sets | {reps_val} Reps "
-                else:
-                    structured_log = f"{sets_val} Sets | {reps_val} Reps | {weight_val} lbs "
-            except ValueError:
-                pass
-
-        if extra_notes.strip():
-            user_details = f"{structured_log}- {extra_notes.strip()}" if structured_log else extra_notes.strip()
-        else:
-            user_details = structured_log.strip()
-            
-        final_details = f"{details_prefix}{user_details}" if details_prefix else user_details
-
-        # Database Check & Submission
-        if database_locked:
-            st.sidebar.error("Database connection is currently unstable. Please refresh the page so we don't overwrite your data.")
-        elif not user_details.strip() and "Outdoor" not in final_details:
-            st.sidebar.warning("Please add some workout details before submitting!")
-        else:
-            with st.spinner("Syncing to Supabase Cloud..."):
+        if st.button("🚀 Fetch Latest Garmin Data", type="primary", use_container_width=True):
+            with st.spinner("Connecting..."):
                 try:
-                    if weight_input == "" or weight_input is None:
-                        final_weight = 0.0
-                    else:
-                        try:
-                            final_weight = float(weight_input)
-                        except:
-                            final_weight = 0.0
-
-                    success = log_manual_entry(
-                        user_name=user, 
-                        log_date=date_input, 
-                        activity=activity_value, 
-                        body_weight=final_weight, 
-                        details=final_details
-                    )
+                    client_instance = Garmin(g_email, g_pass)
+                    client_instance.login()
+                    fresh_metrics = fetch_garmin_data_layer(today, cache_id, client_instance)
+                    st.session_state["daily_metrics"] = fresh_metrics
+                    st.session_state["garmin_status"] = "Active & Synced"
                     
-                    if success:
-                        st.session_state["force_db_refresh"] = True
-                        st.session_state["form_reset"] += 1
-                        st.sidebar.success("🔥 Activity Successfully Logged to Cloud!")
-                        st.rerun()
-                    else:
-                        st.sidebar.error("❌ Failed to log entry. Check terminal for errors.")
+                    history_list = fresh_metrics.get("Weight_History", [])
+                    if history_list and not database_locked:
+                        check_and_bulk_log_garmin_weight(user_name=user, weight_history_list=history_list)
+                        st.session_state["force_db_refresh"] = True 
+                    st.rerun() 
+                except Exception as e:
+                    st.session_state["garmin_status"] = f"Error: {e}"
+                    st.rerun()
 
-                except Exception as log_err:
-                    st.sidebar.error(f"Failed to log entry: {log_err}")
+    st.sidebar.write("") # Quick Spacer
+    
+    # 1. Grab raw metrics
+    metrics = st.session_state["daily_metrics"]
+    battery_raw = metrics.get("Body Battery", 50)
+    stress_raw = metrics.get("Stress", 25)
+    s_score = metrics.get("Sleep Score", "--")
+    
+    battery = int(battery_raw) if str(battery_raw).isdigit() else 50
+    stress = int(stress_raw) if str(stress_raw).isdigit() else 25
+    
+    # 2. SMART WEIGHT LOGIC
+    display_weight = 0.0
+    if not log_df.empty and "User" in log_df.columns:
+        user_weight_df = log_df[log_df["User"] == user].copy()
+        user_weight_df["Body Weight"] = pd.to_numeric(user_weight_df["Body Weight"], errors="coerce")
+        valid_weights = user_weight_df.dropna(subset=["Body Weight"])
+        valid_weights = valid_weights[valid_weights["Body Weight"] > 0]
+        
+        if not valid_weights.empty:
+            valid_weights = valid_weights.sort_values(by="Date", ascending=True)
+            display_weight = float(valid_weights.iloc[-1]["Body Weight"])
+    
+    if display_weight == 0.0:
+        display_weight = metrics.get('Weight', 0.0)
+
+    # 3. SIDEBAR METRICS GRID (Sleek 2-column layout)
+    col1, col2 = st.sidebar.columns(2)
+    col1.metric("Steps", metrics.get("Steps", "0"))
+    col2.metric("Burn (kcal)", metrics.get("Calories", "--"))
+    
+    col3, col4 = st.sidebar.columns(2)
+    col3.metric("Battery", f"{battery}/100")
+    col4.metric("Stress", f"{stress}/100")
+    
+    col5, col6 = st.sidebar.columns(2)
+    col5.metric("Sleep (pts)", s_score if s_score != "--" else "—")
+    col6.metric("RHR (bpm)", metrics.get("RHR", 60))
+    
+    col7, col8 = st.sidebar.columns(2)
+    col7.metric("Weight (lbs)", display_weight if display_weight > 0 else "—")
+    col8.metric("Goal (lbs)", current_goal)
     
     # ==========================================
     # ⚙️ SIDEBAR UTILITY FOOTER 
     # ==========================================
+    # 🟢 THE FIX: Define the reset_id globally BEFORE the bug reporter needs it!
+    if "form_reset" not in st.session_state:
+        st.session_state["form_reset"] = 0
+    reset_id = st.session_state["form_reset"]
+
     st.sidebar.markdown("---")
     st.sidebar.divider()
     
@@ -484,25 +325,36 @@ if check_password():
                 except Exception as e:
                     st.error(f"❌ Failed to connect to database: {e}")
 
-    # 🟢 THE PANIC BUTTON (Public Bug Reporter)
+    # 🟢 THE PANIC BUTTON (Now with Role-Based Categories!)
     with st.sidebar.expander("🐛 Report an Issue"):
         # Wrap in a form so it clears instantly on submit
         with st.form(key=f"bug_report_{reset_id}", clear_on_submit=True):
-            st.caption("Did something break? Tell the developer directly!")
-            bug_text = st.text_area("What happened?", placeholder="e.g., The cardio duration box isn't showing up.")
-            submit_bug = st.form_submit_button("📤 Send to Developer", type="secondary", width='stretch')
+            st.caption("Did something break or do you have an idea? Tell the developer!")
             
+            # 1. DYNAMIC CATEGORY LOGIC
+            if role == "developer":
+                issue_categories = ["Bug", "UI", "Core", "Ops"]
+            else:
+                issue_categories = ["Bug", "UI"]
+                
+            selected_category = st.selectbox("Type of Issue", options=issue_categories)
+            
+            # 2. THE TEXT INPUT
+            bug_text = st.text_area("What happened?", placeholder="e.g., The cardio duration box isn't showing up.")
+            submit_bug = st.form_submit_button("📤 Send to Developer", type="secondary", use_container_width=True)
+            
+            # 3. SUBMISSION ENGINE
             if submit_bug:
                 if not bug_text.strip():
                     st.warning("Please type a message first.")
                 else:
                     with st.spinner("Sending..."):
                         try:
-                            # 🟢 SUPABASE FIX: Instantly injects one row directly to the cloud
+                            # We inject your selected_category right into the payload
                             supabase.table("backlog").insert({
                                 "status": "Backlog",
-                                "category": "Bug",
-                                "feature": f"User Report: {user}",
+                                "category": selected_category,
+                                "feature": f"User Reported: {user}",
                                 "priority": "High",
                                 "notes": bug_text.strip()
                             }).execute()
@@ -569,7 +421,7 @@ if check_password():
     # Base tabs visible to EVERYONE
     tab_titles = [
         "📚 Training Blueprint",
-        "⚡ Daily Vitals",
+        "🏋️ Log a Session",
         "📈 Progress Charts",
         "📋 History Log"
     ]
@@ -681,116 +533,181 @@ if check_password():
                                 st.markdown(f"<div style='font-size: 13px; line-height: 1.4; margin-bottom: 4px;'>• {ex}</div>", unsafe_allow_html=True)
 
     # ------------------------------------------
-    # ⚡ TAB 2: DAILY VITALS (ON DEMAND FIX)
+    # 🏋️ TAB 2: LOG A SESSION
     # ------------------------------------------    
     with tab2:
-        st.subheader("📊 Live Health & Readiness Dashboard")
+        st.subheader("🏋️ Log Your Workout")
         
-        # 🟢 THE MANUAL GARMIN TRIGGER
-        with st.container(border=True):
-            col_g1, col_g2 = st.columns([3, 1], vertical_alignment="center")
+        # 🟢 NEW PHASE SELECTION MAPPER
+        phase_options = ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Daily Core", "TRX Suspension Mastery", "TRX Rip Trainer Power", "Open Gym"]
+        selected_short_phase = st.selectbox("Phase", options=phase_options, index=0)
+        
+        phase_map = {
+            "Phase 1": "Phase 1: Foundation & Endurance",
+            "Phase 2": "Phase 2: Hypertrophy (Muscle Building)",
+            "Phase 3": "Phase 3: Strength & Power",
+            "Phase 4": "Phase 4: Metabolic Conditioning",
+            "Daily Core": "Daily Core",
+            "TRX Suspension Mastery": "TRX Suspension Mastery",
+            "TRX Rip Trainer Power": "TRX Rip Trainer Power",
+            "Open Gym": "Open Gym"
+        }
+        
+        selected_q = phase_map[selected_short_phase]
+        
+        # 🟢 THE TIMEZONE FIX
+        from zoneinfo import ZoneInfo
+        local_tz = ZoneInfo("America/Chicago")
+        local_today = datetime.datetime.now(local_tz).date()
+        
+        date_input = st.date_input("Date", local_today)
+        
+        # 🔄 DATA ROUTING ENGINE
+        details_prefix = ""
+        show_weight_box = False
+        skip_phrases = ["Cycle continuously", "20-Minute AMRAP Session", "resting only as needed"]
+        
+        if selected_q != "Open Gym":
+            selected_w = st.selectbox("Select Session", list(ROUTINES[selected_q]["Workouts"].keys()))
             
-            with col_g1:
-                status_color = "green" if st.session_state["garmin_status"] == "Active & Synced" else "orange"
-                st.markdown(f"**Garmin Connection Status:** :{status_color}[{st.session_state['garmin_status']}]")
-            
-            with col_g2:
-                if st.button("🚀 Fetch Latest Garmin Data", type="primary", width='stretch'):
-                    with st.spinner("Establishing secure link to Garmin..."):
-                        try:
-                            # 1. Login
-                            client_instance = Garmin(g_email, g_pass)
-                            client_instance.login()
-                            
-                            # 2. Fetch Data
-                            fresh_metrics = fetch_garmin_data_layer(today, cache_id, client_instance)
-                            st.session_state["daily_metrics"] = fresh_metrics
-                            st.session_state["garmin_status"] = "Active & Synced"
-                            
-                            # 3. Sync Weight to DB
-                            history_list = fresh_metrics.get("Weight_History", [])
-                            if history_list and not database_locked:
-                                check_and_bulk_log_garmin_weight(
-                                    user_name=user,
-                                    weight_history_list=history_list
-                                )
-                                st.session_state["force_db_refresh"] = True 
-                                
-                            st.rerun() 
-                            
-                        except Exception as e:
-                            st.session_state["garmin_status"] = f"Error: {e}"
-                            st.rerun()
-
-        st.write("") # Quick Spacer
-        
-        # 1. Grab raw metrics from session memory
-        metrics = st.session_state["daily_metrics"]
-        battery_raw = metrics.get("Body Battery", 50)
-        stress_raw = metrics.get("Stress", 25)
-        s_score = metrics.get("Sleep Score", "--")
-        
-        # 2. Math Safety Fix (Prevents crashes if Garmin is disconnected)
-        battery = int(battery_raw) if str(battery_raw).isdigit() else 50
-        stress = int(stress_raw) if str(stress_raw).isdigit() else 25
-        
-        # 🟢 3. SMART WEIGHT LOGIC: Check manual Google Sheets logs first!
-        display_weight = 0.0
-        if not log_df.empty and "User" in log_df.columns:
-            user_weight_df = log_df[log_df["User"] == user].copy()
-            # Force to numbers, skipping blanks
-            user_weight_df["Body Weight"] = pd.to_numeric(user_weight_df["Body Weight"], errors="coerce")
-            valid_weights = user_weight_df.dropna(subset=["Body Weight"])
-            valid_weights = valid_weights[valid_weights["Body Weight"] > 0]
-            
-            if not valid_weights.empty:
-                # 🟢 THE BUG FIX: Explicitly sort by Date!
-                # ascending=True puts the newest date at the absolute bottom.
-                valid_weights = valid_weights.sort_values(by="Date", ascending=True)
+            if "Outdoor" in selected_w:
+                activity_value = "Outdoor Activity" 
+                details_prefix = f"🌲 [{selected_q} - Outdoor] "
+            else:
+                raw_exercises = ROUTINES[selected_q]["Workouts"][selected_w]
+                clean_exercises = []
+                for ex in raw_exercises:
+                    if any(phrase in ex for phrase in skip_phrases): continue
+                    clean_name = ex.split(":")[0].strip()
+                    if clean_name.startswith("- "): clean_name = clean_name[2:]
+                    clean_name = clean_name.lstrip("0123456789 ")
+                    if clean_name: clean_exercises.append(clean_name)
+                    
+                activity_value = st.selectbox("Exercise / Activity", clean_exercises)
+                short_w_name = selected_w.split(":")[0]
+                details_prefix = f"🏋️ [{selected_q} - {short_w_name}] "
                 
-                # Now iloc[-1] guarantees we grab the true newest entry
-                display_weight = float(valid_weights.iloc[-1]["Body Weight"])
-        
-        # If no manual logs exist, fall back to the Garmin Scale API
-        if display_weight == 0.0:
-            display_weight = metrics.get('Weight', 0.0)
-
-        # Dynamic Premium Background Coaching Banners
-        if battery >= 75 and stress < 30:
-            st.markdown("""
-            <div style="background-color: #1E293B; border-left: 6px solid #10B981; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-                <h4 style="margin: 0; color: #34D399; font-weight: 600;">⚡ Daily Focus: Peak Training Window</h4>
-                <p style="margin: 5px 0 0 0; color: #E2E8F0; font-size: 14px;">Your energy capacity is exceptional and stress overhead is low. Today is an ideal window to increase intensity, push your heavy lifting progressions, or strive for a personal milestone.</p>
-            </div>
-            """, unsafe_allow_html=True)
-        elif battery < 40 or stress > 50:
-            st.markdown("""
-            <div style="background-color: #1E293B; border-left: 6px solid #F59E0B; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-                <h4 style="margin: 0; color: #FBBF24; font-weight: 600;">🧘 Daily Focus: Active Recovery & Deload</h4>
-                <p style="margin: 5px 0 0 0; color: #E2E8F0; font-size: 14px;">Nervous system battery is on the lower side or systemic stress tracking is elevated. Consider adjusting today's focus toward mobility work, lighter recovery pacing, or an intentional rest day to bounce back strong.</p>
-            </div>
-            """, unsafe_allow_html=True)
         else:
-            st.markdown("""
-            <div style="background-color: #1E293B; border-left: 6px solid #3B82F6; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-                <h4 style="margin: 0; color: #60A5FA; font-weight: 600;">🏋️ Daily Focus: Baseline Training Flow</h4>
-                <p style="margin: 5px 0 0 0; color: #E2E8F0; font-size: 14px;">Your recovery profile is steady and stable. You have plenty of standard fuel to train—stick to your structured working sets, maintain great mechanical form, and execute your planned progression.</p>
-            </div>
-            """, unsafe_allow_html=True)
+            custom_session = st.selectbox("Session Type", ["A La Carte", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching", "Body Weight Only"])
+            if custom_session == "Body Weight Only":
+                show_weight_box = True
+                activity_value = "Body Weight Only"
+                details_prefix = ""
+            elif custom_session in ["Mountain Biking", "Hiking", "Walking", "Mobility / Stretching"]:
+                activity_value = custom_session
+                details_prefix = f"📋 [Open Gym] "
+            else:
+                master_exercises = []
+                for q_key, q_data in ROUTINES.items():
+                    for w_key, ex_list in q_data["Workouts"].items():
+                        if "Outdoor" not in w_key:
+                            for ex in ex_list:
+                                clean_name = ex.split(":")[0].strip()
+                                if clean_name.startswith("- "): clean_name = clean_name[2:]
+                                clean_name = clean_name.lstrip("0123456789 ")
+                                if clean_name not in master_exercises and "AMRAP" not in clean_name and "Cycle continuously" not in clean_name and "⏱️" not in clean_name:
+                                    master_exercises.append(clean_name)
+                
+                master_exercises.sort()
+                if "Deadlift" not in master_exercises: master_exercises.append("Deadlift")
+                master_exercises.append("Other (Specify in Notes)")
+                
+                activity_value = st.selectbox("Exercise / Activity", master_exercises)
+                details_prefix = "🏋️ [Open Gym - A La Carte] "        
 
-        # Clean 8-Metric Card Grid Layout
-        col1, col2, col3, col4 = st.columns(4)
-        col5, col6, col7, col8 = st.columns(4)
+        if show_weight_box:
+            weight_input = st.text_input("Body Weight (lbs)", key=f"bw_{reset_id}")
+        else:
+            weight_input = ""
 
-        col1.metric("Steps Tracked", metrics.get("Steps", "0"))
-        col2.metric("Resting Heart Rate", f"{metrics.get('RHR', 60)} bpm")
-        col3.metric("Body Battery", f"{battery}/100")
-        col4.metric("Stress Index", f"{stress}/100")
-        
-        col5.metric("Sleep Score", f"{s_score} pts" if s_score != "--" else "—")
-        col6.metric("Total Daily Burn", f"{metrics.get('Calories', '--')} kcal" if metrics.get('Calories') != "--" else "—")
-        col7.metric("Current Weight", f"{display_weight} lbs" if display_weight > 0 else "—")
-        col8.metric("Weight Goal", f"{current_goal} lbs")
+        if selected_q == "Open Gym":
+            non_lifting = ["Body Weight Only", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching"]
+            show_lift_stats = custom_session not in non_lifting
+        else:
+            show_lift_stats = "Outdoor" not in selected_w and "Cycle continuously" not in activity_value
+            
+        structured_log = ""
+
+        if show_lift_stats:
+            st.markdown("### 📝 Lift Tracking Stats")
+            if not log_df.empty and "User" in log_df.columns and "Activity" in log_df.columns:
+                past_logs = log_df[(log_df["User"] == user) & (log_df["Activity"] == activity_value)].copy()
+                if not past_logs.empty:
+                    past_logs = past_logs.sort_values(by="Date", ascending=False)
+                    last_log = past_logs.iloc[0]
+                    last_date = last_log["Date"]
+                    last_details = str(last_log.get("Details", ""))
+                    clean_details = last_details.split("]")[-1].strip() if "]" in last_details else last_details
+                    
+                    st.markdown(f"""
+                    <div style="background-color: #1E293B; border: 1px solid #334155; padding: 12px; border-radius: 6px; margin-bottom: 15px;">
+                        <div style="color: #94A3B8; font-size: 13px; margin-bottom: 5px;">💡 <b>Last Time ({last_date})</b></div>
+                        <div style="color: #F8FAFC; font-size: 14px; font-weight: 500;">{clean_details}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+        with st.form(key=f"activity_log_form_{reset_id}"):
+            is_trx_phase = selected_q in ["TRX Suspension Mastery", "TRX Rip Trainer Power"]
+            is_bodyweight = (activity_value in BODYWEIGHT_ONLY_EXERCISES) or is_trx_phase
+            
+            if show_lift_stats:
+                cols = st.columns(2 if is_bodyweight else 3) 
+                with cols[0]: input_sets = st.text_input("Sets", key=f"sets_{reset_id}")
+                with cols[1]: input_reps = st.text_input("Reps", key=f"reps_{reset_id}")
+                if not is_bodyweight:
+                    with cols[2]: input_weight_lifted = st.text_input("Weight", key=f"wgt_{reset_id}")
+                else:
+                    input_weight_lifted = "0"
+            else:
+                input_sets, input_reps, input_weight_lifted = "", "", ""
+
+            extra_notes = st.text_input("Notes / Explanation", placeholder="Optional: Provide any details...", key=f"notes_{reset_id}")
+            submit_log = st.form_submit_button("💾 Log Activity", type="primary", use_container_width=True)
+
+        if submit_log:
+            if input_sets.strip() or input_reps.strip() or (not is_bodyweight and input_weight_lifted.strip()):
+                try:
+                    sets_val = int(input_sets) if input_sets.strip() else 0
+                    reps_val = int(input_reps) if input_reps.strip() else 0
+                    weight_val = float(input_weight_lifted) if input_weight_lifted.strip() else 0.0
+                    
+                    if is_bodyweight:
+                        structured_log = f"{sets_val} Sets | {reps_val} Reps "
+                    else:
+                        structured_log = f"{sets_val} Sets | {reps_val} Reps | {weight_val} lbs "
+                except ValueError:
+                    pass
+
+            if extra_notes.strip():
+                user_details = f"{structured_log}- {extra_notes.strip()}" if structured_log else extra_notes.strip()
+            else:
+                user_details = structured_log.strip()
+                
+            final_details = f"{details_prefix}{user_details}" if details_prefix else user_details
+
+            if database_locked:
+                st.error("Database connection is currently unstable. Please refresh the page so we don't overwrite your data.")
+            elif not user_details.strip() and "Outdoor" not in final_details:
+                st.warning("Please add some workout details before submitting!")
+            else:
+                with st.spinner("Syncing to Supabase Cloud..."):
+                    try:
+                        final_weight = float(weight_input) if weight_input else 0.0
+                    except:
+                        final_weight = 0.0
+
+                    success = log_manual_entry(
+                        user_name=user, log_date=date_input, activity=activity_value, 
+                        body_weight=final_weight, details=final_details
+                    )
+                    
+                    if success:
+                        st.session_state["force_db_refresh"] = True
+                        st.session_state["form_reset"] += 1
+                        st.success("🔥 Activity Successfully Logged to Cloud!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Failed to log entry.")
 
     # ------------------------------------------
     # 📈 TAB 3: PROGRESS CHARTS
