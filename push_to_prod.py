@@ -30,4 +30,4 @@ print("\n🔄 Switching back to 'dev' branch for safety...")
 run_cmd("git checkout dev")
 
 print("\n✅ LIVE DEPLOYMENT COMPLETE!")
-print("💪 Your wife's app is now updated. You are safely back in your DEV sandbox.")
+print("💪 Your PROD app is now updated. You are safely back in your DEV sandbox.")

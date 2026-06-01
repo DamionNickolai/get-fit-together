@@ -50,5 +50,5 @@ print("☁️ Pushing to GitHub (dev branch)...")
 run_cmd("git push origin dev")
 
 print("\n✅ PUSHED TO STAGING!")
-print("📱 Go test the red GFT-DEV app on your phone.")
+print("📱 Go test the GFT-DEV app on your phone.")
 print("💡 Whenever you are ready to update the live app, run: python push_to_prod.py")

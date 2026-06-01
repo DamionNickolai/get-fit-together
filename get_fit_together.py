@@ -542,7 +542,6 @@ if check_password():
         from zoneinfo import ZoneInfo
         local_tz = ZoneInfo("America/Chicago")
         local_today = datetime.datetime.now(local_tz).date()
-        
         date_input = st.date_input("Date", local_today)
         
         # 🟢 BUILD THE ULTIMATE MASTER ACTIVITY LIST
@@ -581,12 +580,14 @@ if check_password():
             if opt not in master_exercises:
                 master_exercises.append(opt)
         
-        # 🟢 THE DROPDOWN HYPOTHESIS TEST
-        activity_value = st.selectbox(
-            "Select Activity", 
-            options=master_exercises,
-            label_visibility="collapsed"
-        )
+        # 🟢 THE CONTAINED MASTER LIST
+        st.markdown("**Select Activity**")
+        with st.container(height=250):
+            activity_value = st.radio(
+                "Select Activity", 
+                options=master_exercises,
+                label_visibility="collapsed"
+            )
         
         # 🔄 FORM ROUTING LOGIC
         # Determine if we should hide the weight box
@@ -604,7 +605,7 @@ if check_password():
 
         # 📝 HISTORICAL STATS (Last Time they did this specific exercise)
         if show_lift_stats:
-            st.markdown("### 📝 Lift Tracking Stats")
+            st.markdown("### 📝 Lift Tracking")
             if not log_df.empty and "User" in log_df.columns and "Activity" in log_df.columns:
                 past_logs = log_df[(log_df["User"] == user) & (log_df["Activity"] == activity_value)].copy()
                 if not past_logs.empty:
