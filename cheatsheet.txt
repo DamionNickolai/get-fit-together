@@ -13,7 +13,7 @@ Ctrl + s
 AUTO PUSH FROM LOCAL TO CLOUD (Change Message):
 python deploy.py "commit message"
 python push_to_dev.py
-python pusht_to_prod.py
+python push_to_prod.py
 
 Push a small fix to dev staging:
 git add auth.py
