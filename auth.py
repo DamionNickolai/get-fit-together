@@ -76,6 +76,9 @@ def check_password():
                     st.session_state["password_correct"] = True
                     st.session_state["logged_in_user"] = response.data[0]["username"]
                     
+                    # 🟢 THE AUTHENTICATION BRIDGE: Give the AI Coach exactly what it's looking for!
+                    st.session_state["username"] = response.data[0]["username"]
+                    
                     # Load all the custom styling from Supabase into memory
                     user_data = response.data[0]
                     st.session_state["user_role"] = user_data.get("role", "user")
@@ -108,11 +111,11 @@ def check_password():
     bg_url = st.secrets["app_config"]["bg_image_url"]
     set_login_background(image_url=bg_url)
     
-    st.markdown("<h2 style='text-align: center;'>🔒 Gym Access Portal</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>🔒 Get Fit Together</h2>", unsafe_allow_html=True)
     
     def password_entered():
-        # Triggered when the user clicks 'Log In'
-        entered_username = st.session_state.get("username", "").strip()
+        # Look for the newly named widget key!
+        entered_username = st.session_state.get("login_username_input", "").strip()
         entered_password = st.session_state.get("password", "")
         
         if perform_login(username=entered_username, raw_password=entered_password):
@@ -126,8 +129,8 @@ def check_password():
     col1, col2, col3 = st.columns([1, 2, 1]) 
     with col2:
         with st.form("login_form"):
-            # The autocomplete attributes tell Google Passwords exactly what these are
-            st.text_input("Username", key="username", autocomplete="username")
+            # We changed the key so it doesn't conflict with our permanent memory!
+            st.text_input("Username", key="login_username_input", autocomplete="username")
             st.text_input("Password", type="password", key="password", autocomplete="current-password")
             
             st.form_submit_button("Log In", on_click=password_entered)

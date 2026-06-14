@@ -4,6 +4,10 @@ import pandas as pd
 import datetime
 import plotly.express as px
 import hashlib 
+import re
+
+# 🟢 NEW: Put the Google GenAI types right here!
+from google.genai import types
 
 # 🛑 1. PAGE CONFIG MUST BE FIRST
 st.set_page_config(
@@ -14,20 +18,38 @@ st.set_page_config(
 )
 
 # 🟢 Add this near your other config variables
-BODYWEIGHT_ONLY_EXERCISES = ["Push-ups", "Push-ups (or modified on knees)", "Plank", "Suspended Planks", "Atomic Push-ups"]
+BODYWEIGHT_ONLY_EXERCISES = [
+    "Push-ups", "Push-ups (or modified on knees)", "Plank", "Suspended Planks", "Atomic Push-ups",
+    # TRX Suspension Mastery
+    "TRX Chest Press (Straps Fully Lengthened)", "TRX Low Rows (Straps Fully Shortened)", "TRX Tricep Extensions (Mid-Length)", 
+    "TRX Bicep Curls (Mid-Length)", "TRX Y-Flys (Mid-Length)", "TRX Pistol Squats (Mid-Length)", 
+    "TRX Bulgarian Split Squats (Mid-Calf)", "TRX Suspended Hamstring Curls (Mid-Calf)", "TRX Glute Bridges (Mid-Calf)", 
+    "TRX Jump Squats (Mid-Length)", "TRX Atomic Push-ups (Mid-Calf)", "TRX Suspended Pikes (Mid-Calf)", 
+    "TRX Mountain Climbers (Mid-Calf)", "TRX Suspended Planks (Mid-Calf)", "TRX Side Planks (Feet in Cradles)",
+    # TRX Rip Trainer Power
+    "TRX Rip Strike (Zone 1 Anchor)", "TRX Rip Pitchfork (Zone 1 Anchor)", "TRX Rip Sweep (Zone 1 Anchor)", 
+    "TRX Rip Torso Rotation (Zone 2 Anchor)", "TRX Rip Kayak (Zone 2 Anchor)", "TRX Rip Chest Press (Zone 2 Anchor)", 
+    "TRX Rip Row (Zone 2 Anchor)", "TRX Rip Tricep Extension (Zone 2 Anchor)", "TRX Rip Bicep Curl (Zone 2 Anchor)", 
+    "TRX Rip Overhead Press (Zone 1 Anchor)", "TRX Rip Squat Row (Zone 2 Anchor)", "TRX Rip Lunge Chest Press (Zone 2 Anchor)", 
+    "TRX Rip Jump Squat (Zone 2 Anchor)", "TRX Rip Windmill (Zone 1 Anchor)", "TRX Rip Drag (Zone 1 Anchor)"
+]
 
 # 🛑 2. IMPORT CUSTOM MODULES
+# 🟢 Bring in central time
+from zoneinfo import ZoneInfo
 # 🟢 Bring in the login module!
 from auth import check_password
-
 # 🟢 Bring in the database automation helpers AND the Supabase client!
-from database import check_and_bulk_log_garmin_weight, check_and_autolog_garmin_weight, get_user_history_df, log_manual_entry, supabase
-
+from database import check_and_bulk_log_garmin_weight, check_and_autolog_garmin_weight, get_user_history_df, log_manual_entry, supabase, log_daily_garmin_metrics, get_recent_garmin_metrics, save_coach_message, get_todays_chat, clear_todays_chat, ai_log_workout_set, ai_update_dossier, get_all_time_prs, get_user_profile
+# 🟢 Put in the AI COACH!
+from ai_coach import init_coach_chat
 # 🟢 Bring in the static workout database!
 from workouts import ROUTINES
+# 🟢 Bring in the utility functions!
+from utils import calculate_next_version, get_youtube_embed_url, safe_int_convert
 
 # 🟢 3. APP VERSIONING
-APP_VERSION = "1.5.0"
+APP_VERSION = "2.0.0"
 st.session_state["APP_VERSION"] = APP_VERSION
 
 # ==========================================
@@ -173,7 +195,33 @@ if check_password():
         
         # Initialize default standby data (Fast Boot!)
         if "garmin_status" not in st.session_state:
-            st.session_state["garmin_status"] = "Standby Mode"
+            # 🟢 Check the database for today's data first!
+            recent_db_metrics = get_recent_garmin_metrics(user, limit=1)
+            
+            if not recent_db_metrics.empty and str(recent_db_metrics.iloc[0]["Date"]) == today:
+                db_row = recent_db_metrics.iloc[0]
+                st.session_state["garmin_status"] = "Loaded from Cloud"
+                st.session_state["daily_metrics"] = {
+                    "Steps": db_row.get("Steps", "0"),
+                    "RHR": db_row.get("RHR", 60),
+                    "Body Battery": db_row.get("Body_Battery", 50),
+                    "Stress": db_row.get("Stress", "--"),
+                    "Calories": db_row.get("Calories", "--"),
+                    "HRV": db_row.get("HRV", "--"),
+                    "Sleep Score": db_row.get("Sleep_Score", "--"),
+                    "Weight": 0.0, # Your existing smart weight logic handles this below
+                    "Weight Goal": "--",
+                    "Weight_History": [],
+                    "Raw": "Loaded from Database"
+                }
+            else:
+                st.session_state["garmin_status"] = "Standby Mode"
+                st.session_state["daily_metrics"] = {
+                    "Steps": "0", "RHR": 60, "Body Battery": 50, "Stress": "--",
+                    "Calories": "--", "HRV": "--", "Sleep Score": "--",
+                    "Weight": 0.0, "Weight Goal": "--", "Weight_History": [],
+                    "Raw": "Standby Mode Active"
+                }
             
         if "daily_metrics" not in st.session_state:
             st.session_state["daily_metrics"] = {
@@ -201,24 +249,45 @@ if check_password():
     st.sidebar.header("⚡ Vitals")
     
     # 🟢 THE VARIABLE FIX: Fetch the goal weight EARLY so the metrics can use it
-    current_goal_response = supabase.table("users").select("goal_weight").eq("username", user).execute()
-    current_goal = 0.0
-    if current_goal_response.data and current_goal_response.data[0].get("goal_weight"):
-        current_goal = float(current_goal_response.data[0]["goal_weight"])
+    # 1. Fetch from our new Long-Term Memory table instead of the old users table!
+    early_profile = get_user_profile(user)
+    db_goal = float(early_profile.get("goal_weight", 0) or 0)
+    
+    # 2. Check if the AI or UI just updated the global state. If not, set it using the DB.
+    if "global_goal_weight" not in st.session_state:
+        st.session_state["global_goal_weight"] = db_goal
+        
+    # 3. Lock in the current goal for the metrics to use!
+    current_goal = st.session_state["global_goal_weight"]
 
-    # 🟢 MANUAL GARMIN TRIGGER (Sidebar Optimized)
+    # 🟢 GARMIN AUTO-FETCH & MANUAL TRIGGER
     with st.sidebar.container(border=True):
         status_color = "green" if st.session_state["garmin_status"] == "Active & Synced" else "orange"
         st.markdown(f"**Garmin:** :{status_color}[{st.session_state['garmin_status']}]")
         
-        if st.button("🚀 Fetch Latest Garmin Data", type="primary", use_container_width=True):
-            with st.spinner("Connecting..."):
+        # Check if we have today's metrics in the DB to avoid unnecessary daily fetching
+        needs_auto_fetch = False
+        
+        # ONLY calculate auto-fetch if we are in Production! 
+        # In DEV (is_local_env), this stays False, forcing you to use the manual button
+        if not is_local_env and st.session_state["garmin_status"] == "Standby Mode":
+            recent_db_metrics = get_recent_garmin_metrics(user, limit=1)
+            if recent_db_metrics.empty or str(recent_db_metrics.iloc[0]["Date"]) != today:
+                needs_auto_fetch = True
+
+        fetch_clicked = st.button("🚀 Fetch Latest Garmin Data", type="primary", use_container_width=True)
+        
+        if fetch_clicked or needs_auto_fetch:
+            with st.spinner("Syncing Garmin Data..." if fetch_clicked else "Auto-syncing Daily Garmin..."):
                 try:
                     client_instance = Garmin(g_email, g_pass)
                     client_instance.login()
                     fresh_metrics = fetch_garmin_data_layer(today, cache_id, client_instance)
                     st.session_state["daily_metrics"] = fresh_metrics
                     st.session_state["garmin_status"] = "Active & Synced"
+                    
+                    # Log the daily metrics to the database
+                    log_daily_garmin_metrics(user, today, fresh_metrics)
                     
                     history_list = fresh_metrics.get("Weight_History", [])
                     if history_list and not database_locked:
@@ -227,18 +296,21 @@ if check_password():
                     st.rerun() 
                 except Exception as e:
                     st.session_state["garmin_status"] = f"Error: {e}"
-                    st.rerun()
+                    if fetch_clicked: # Only rerun on error if they manually clicked it
+                        st.rerun()
 
     st.sidebar.write("") # Quick Spacer
     
+    # 🟢 SIDEBAR METRICS - SAFE CONVERSION
     # 1. Grab raw metrics
     metrics = st.session_state["daily_metrics"]
     battery_raw = metrics.get("Body Battery", 50)
     stress_raw = metrics.get("Stress", 25)
     s_score = metrics.get("Sleep Score", "--")
     
-    battery = int(battery_raw) if str(battery_raw).isdigit() else 50
-    stress = int(stress_raw) if str(stress_raw).isdigit() else 25
+    # 🟢 FIX #2: Use safe conversion that handles "60.5", "--", None, etc.
+    battery = safe_int_convert(battery_raw, default=50)
+    stress = safe_int_convert(stress_raw, default=25)
     
     # 2. SMART WEIGHT LOGIC
     display_weight = 0.0
@@ -281,49 +353,47 @@ if check_password():
     reset_id = st.session_state["form_reset"]
 
     st.sidebar.markdown("---")
-    st.sidebar.divider()
+    st.sidebar.divider() 
     
-    # GOAL WEIGHT SETTING EXPANDER
-    with st.sidebar.expander("🎯 Set Goal Weight"):
-
-        # 1. Fetch current goal
-        current_goal_response = supabase.table("users").select("goal_weight").eq("username", user).execute()
+    # --- SIDEBAR: UNIFIED USER DOSSIER ---
+    with st.sidebar.expander("⚙️ My Fitness Profile", expanded=False):
+        # 🟢 THE FIX: We explicitly define the user and fetch the data right here!
+        active_user = st.session_state["username"] 
+        user_profile = get_user_profile(active_user)
         
-        current_goal = 0.0
-        if current_goal_response.data and current_goal_response.data[0].get("goal_weight"):
-            current_goal = float(current_goal_response.data[0]["goal_weight"])
-            
-        # 2. THE FORM UPGRADE
-        with st.form(key="goal_weight_form"):
-            # 🟢 SET VALUE TO NONE AND ADD A PLACEHOLDER
-            new_goal = st.number_input(
-                "Target Weight (lbs)", 
-                min_value=100.0, 
-                max_value=400.0, 
-                value=None, 
-                placeholder=f"{current_goal}", # Shows as grey background text
-                step=0.1
-            )
-            submit_goal = st.form_submit_button("💾 Save Goal", type="primary")
-            
-        # 3. TRIGGER AND ERROR CHECKING
-        if submit_goal:
-            # 🟢 NEW SAFETY CHECK: Don't save if they left it blank
-            if new_goal is None:
-                st.warning("Please enter a new goal weight before saving.")
-            else:
-                try:
-                    # Attempt to update the database
-                    update_response = supabase.table("users").update({"goal_weight": new_goal}).eq("username", user).execute()
-                    
-                    if not update_response.data:
-                        st.error(f"⚠️ Supabase received the request, but couldn't update the row for '{user}'.")
-                    else:
-                        st.success(f"Goal updated to {new_goal} lbs!")
-                        st.rerun() 
-                        
-                except Exception as e:
-                    st.error(f"❌ Failed to connect to database: {e}")
+        # Safely extract the variables
+        current_goal_weight = float(user_profile.get("goal_weight", 0) or 0)
+        st.session_state["global_goal_weight"] = current_goal_weight
+        current_phase = user_profile.get("current_phase", "Phase 1: Foundation & Endurance")
+        equipment = user_profile.get("available_equipment", "Full Gym")
+        injuries = user_profile.get("nagging_injuries", "None")
+        
+        # The UI Elements
+        new_goal = st.number_input("Target Goal Weight (lbs)", min_value=0.0, value=current_goal_weight, step=1.0)
+        
+        new_phase = st.selectbox(
+            "Current Phase", 
+            ["Phase 1: Foundation & Endurance", "Phase 2: Hypertrophy (Muscle Building for Fat Loss)", "Phase 3: Strength & Power", "Phase 4: Metabolic Conditioning"],
+            index=["Phase 1", "Phase 2", "Phase 3", "Phase 4"].index(current_phase.split(":")[0]) if current_phase else 0
+        )
+        
+        new_equip = st.text_area("Available Equipment", value=equipment, height=68)
+        new_injuries = st.text_area("Nagging Injuries", value=injuries, height=68)
+        
+        if st.button("Save Profile", use_container_width=True):
+            try:
+                supabase.table("gym_user_profiles").upsert({
+                    "username": active_user,
+                    "current_phase": new_phase,
+                    "available_equipment": new_equip,
+                    "nagging_injuries": new_injuries,
+                    "goal_weight": new_goal,
+                    "updated_at": datetime.datetime.now(ZoneInfo("America/Chicago")).isoformat()
+                }).execute()
+                st.success("Profile Updated!")
+                st.rerun() 
+            except Exception as e:
+                st.error(f"Failed to update: {e}")
 
     # 🟢 THE PANIC BUTTON (Now with Role-Based Categories!)
     with st.sidebar.expander("🐛 Report an Issue"):
@@ -420,14 +490,12 @@ if check_password():
     # ==========================================
     # Base tabs visible to EVERYONE
     tab_titles = [
-        "📚 Training Blueprint",
+        "🤖 AI Coach", 
         "🏋️ Log a Session",
         "📈 Progress Charts",
-        "📋 History Log"
+        "📚 Training Blueprint",
+        "📢 What's New"
     ]
-
-    # 🟢 THE FIX: Always show What's New, so we can proofread in Dev
-    tab_titles.append("📢 What's New")
 
     # ONLY append the Admin tab if running locally AND you are a developer
     if role == "developer" and is_local_env:
@@ -442,95 +510,292 @@ if check_password():
     tab3 = tabs[2]
     tab4 = tabs[3]
 
-    # Default to None
-    tab_changelog = None
-    tab_admin = None
-
-    # Assign What's New tab (Always exists now)
+    # Assign What's New tab
     tab_changelog = tabs[4]
     tab_idx = 5
 
     # Assign Admin tab if developer and local
+    tab_admin = None
     if role == "developer" and is_local_env:
         tab_admin = tabs[tab_idx]
 
     # ------------------------------------------
-    # 📚 TAB 1: TRAINING BLUEPRINT
+    # 🤖 TAB 1: AI COACH
     # ------------------------------------------
     with tab1:
-        st.subheader("🗓️ 12-Month Periodized Roadmap")
-        st.write("---")
-        
-        # 🟢 List the exact names of the routines you want at the BOTTOM of the page
-        # (Make sure these strings match the keys in your workouts.py perfectly!)
-        bottom_modules = [
-            "Daily Core", 
-            "TRX Suspension Mastery", 
-            "TRX Rip Trainer Power"
-        ]
-        
-        # 🟢 TOP SECTION: Render Phases 1-4
-        for q_key, q_data in ROUTINES.items():
-            # Skip the bottom modules so they don't render up here
-            if q_key in bottom_modules:
-                continue 
-                
-            with st.expander(f"📌 {q_key}", expanded=False):
-                st.markdown(f"🎯 **Macro Target:** *{q_data['Focus']}*")
-                st.write("---")
-                
-                # Responsive 4-Column Exercise Layout
-                cols = st.columns(4)
-                for idx, (w_name, exercises) in enumerate(q_data["Workouts"].items()):
-                    with cols[idx]:
-                        st.markdown(f"✨ **{w_name.split(':')[0]}**")
-                        st.caption(w_name.split(":")[-1].strip() if ":" in w_name else "")
-                        # Inside your rendering loop in Tab 1:
-                        for ex in exercises:
-                            # 🟢 Split the name from the reps (e.g., "Kettlebell Swings: 10 Reps")
-                            name = ex.split(":")[0].strip()
-                            reps = ex.split(":")[1].strip() if ":" in ex else ""
-                            
-                            st.markdown(f"<div style='font-size: 13px; line-height: 1.4; margin-bottom: 4px;'>• <b>{name}</b>: {reps}</div>", unsafe_allow_html=True)
-                            
-        # Weekly Baseline Calendar Flow Reference
-        st.markdown("### 🌲 Weekly Cross-Training Architecture")
-        col_sch1, col_sch2 = st.columns(2)
-        with col_sch1:
-            st.markdown("""
-            * **Monday:** 🏋️ Workout A (Strength / Split Focus)
-            * **Tuesday:** 🚲 Mountain Biking / Hiking / Walking (Cardio, 30-45 mins)
-            * **Wednesday:** 🏋️ Workout B (Strength / Split Focus)
-            """)
-        with col_sch2:
-            st.markdown("""
-            * **Thursday:** 🧘 Walk / Low-Intensity Cardio & Mobility Stretch
-            * **Friday:** 🏋️ Workout C (Full Body / Circuit Integration)
-            * **Saturday / Sunday:** 👨‍👩‍👧‍👦 Family Active Recovery & Full System Rest
-            """)
+        # 🛑 THE STRICT GATEKEEPER
+        # This must be the absolute first thing in the tab, outside of any other loops!
+        if "username" not in st.session_state:
+            st.error("Authentication required. Please log in.")
+            st.stop() # Halts the entire app right here!
+            
+        # Grab the verified name once to use everywhere below
+        active_user = st.session_state["username"]
 
-        # 🟢 BOTTOM SECTION: Render Core & TRX Systems
-        st.markdown("---")
-        st.subheader("🔄 Other Training Breakdowns")
-        
-        for module_key in bottom_modules:
-            # Verify the module actually exists in workouts.py before trying to render it
-            if module_key in ROUTINES:
-                module_data = ROUTINES[module_key]
-                with st.expander(f"📌 {module_key}", expanded=False):
-                    st.markdown(f"🎯 **Macro Target:** *{module_data['Focus']}*")
-                    st.write("---")
+        col_c1, col_c2 = st.columns([4, 1], vertical_alignment="bottom")
+        with col_c1:
+            st.subheader(f"🧠 Coach's Corner")
+        with col_c2:
+            # A quick way to wipe the memory and start over!
+            if st.button("🧹 Clear Chat", use_container_width=True): 
+                active_user = st.session_state["username"]
+                clear_todays_chat(active_user)
+                if "coach_chat" in st.session_state:
+                    del st.session_state["coach_chat"]
+                if "chat_messages" in st.session_state:
+                    del st.session_state["chat_messages"]
+                st.rerun()
+
+        # ==========================================
+        # 🚀 THE UNIFIED WAKE UP SEQUENCE
+        # ==========================================
+        if "coach_chat" not in st.session_state or "chat_messages" not in st.session_state:
+            with st.spinner("Waking up Coach"):
+                
+                # --- 1. INITIALIZE THE AI BRAIN ---
+                recent_workouts = log_df[log_df["User"] == user].sort_values(by="Date", ascending=False).head(14) if not log_df.empty else pd.DataFrame()
+                recent_vitals = get_recent_garmin_metrics(user, limit=14)
+                if not recent_vitals.empty:
+                    recent_vitals = recent_vitals.drop(columns=["id", "User"], errors="ignore")
+                
+                # --- NEW: Fetch All-Time PRs dynamically ---
+                all_prs = get_all_time_prs(user)
+                
+                # Format the top heavy lifts for the AI to know about
+                pr_text = "All-Time PRs: "
+                if all_prs:
+                    # Let's hand the AI your Big 3. If you have them, it will help it calibrate your strength level and make better workout suggestions!
+                    for lift_name, max_weight in all_prs.items():
+                        if any(key in lift_name for key in ["Press", "Squat", "Deadlift"]):
+                            pr_text += f"{lift_name}: {max_weight} lbs | "
+                else:
+                    pr_text += "No PRs established yet."
+                
+                # ==========================================
+                # 🟢 NEW: Fetch the User Dossier (Long Term Memory)
+                # ==========================================
+                user_profile = get_user_profile(user)
+                current_phase = user_profile.get("current_phase", "Phase 1: Foundation & Endurance")
+                equipment = user_profile.get("available_equipment", "Full Gym")
+                injuries = user_profile.get("nagging_injuries", "None")
+                
+                # Catch the new telephone line (Now with Dossier!)
+                coach_client, chat_session, error = init_coach_chat(
+                    user, 
+                    current_goal, 
+                    recent_workouts, 
+                    recent_vitals, 
+                    pr_text,
+                    current_phase, # 🟢 NEW
+                    equipment,     # 🟢 NEW
+                    injuries       # 🟢 NEW
+                )
+                
+                if error:
+                    st.error(error)
+                else:
+                    st.session_state["coach_client"] = coach_client 
+                    st.session_state["coach_chat"] = chat_session
                     
-                    # 🟢 Dynamically create the right amount of columns! 
-                    # (Core has 1 workout, TRX has 3. This handles both automatically)
-                    num_workouts = len(module_data["Workouts"])
-                    cols = st.columns(num_workouts)
+                    # --- 2. CHECK THE DATABASE ---
+                    active_user = st.session_state["username"]
+                    db_history = get_todays_chat(active_user)
                     
-                    for idx, (w_name, exercises) in enumerate(module_data["Workouts"].items()):
-                        with cols[idx]:
-                            st.markdown(f"✨ **{w_name.split(':')[0]}**")
-                            for ex in exercises:
-                                st.markdown(f"<div style='font-size: 13px; line-height: 1.4; margin-bottom: 4px;'>• {ex}</div>", unsafe_allow_html=True)
+                    if db_history and len(db_history) > 0:
+                        # A. Load the visual UI memory
+                        st.session_state["chat_messages"] = [
+                            {
+                                "role": msg["role"],
+                                "content": msg["content"],
+                                "visuals": msg.get("visuals"),
+                                "video_url": msg.get("video_url")
+                            } for msg in db_history
+                        ]
+                        
+                        # B. Inject the memories into the AI's internal brain!
+                        ai_history = []
+                        for msg in db_history:
+                            ai_role = "user" if msg["role"] == "user" else "model"
+                            
+                            # 🟢 THE GOOGLE API FIX: Google requires history to start with a 'user' message.
+                            # If the first DB row is the Coach's Briefing, we inject a hidden user prompt first!
+                            if len(ai_history) == 0 and ai_role == "model":
+                                ai_history.append({"role": "user", "parts": ["Analyze my Garmin vitals and generate my Daily Briefing."]})
+                                
+                            ai_history.append({"role": ai_role, "parts": [msg["content"]]})
+                        
+                        try:
+                            # Safely load the history into the AI's context window
+                            st.session_state["coach_chat"].history = ai_history
+                        except Exception as e:
+                            print(f"History Injection Warning: {e}")
+                            
+                    else:
+                        # --- 3. BRAND NEW DAY ---
+                        st.session_state["chat_messages"] = []
+                        
+                        # Trigger the Epic Daily Briefing on the first boot!
+                        try:
+                            # We send an invisible prompt to the AI to generate your briefing
+                            briefing_response = st.session_state["coach_chat"].send_message("Analyze my Garmin vitals and workout plan, and generate my personalized Daily Briefing.")
+                            epic_greeting = briefing_response.text
+                            
+                            st.session_state["chat_messages"].append({"role": "assistant", "content": epic_greeting})
+                            save_coach_message(active_user, "assistant", epic_greeting)
+                        except Exception as e:
+                            fallback = "Good morning! Ready to crush today's workout?"
+                            st.session_state["chat_messages"].append({"role": "assistant", "content": fallback})
+                            save_coach_message(active_user, "assistant", fallback)
+                                                
+        # 🟢 THE ELONGATED VIDEO MODAL
+        @st.dialog("🎥 Form Tutorial", width="large")
+        def play_video_modal(url):
+            # YouTube requires "embed" links for iframes, not "watch" links. We swap it here!
+            embed_url = url.replace("watch?v=", "embed/")
+            
+            # We use raw HTML to force a specific height
+            st.markdown(
+                f"""
+                <iframe width="100%" height="800" src="{embed_url}" 
+                frameborder="0" allow="fullscreen; accelerometer; autoplay; encrypted-media; picture-in-picture" 
+                style="border-radius: 8px;"></iframe>
+                """, 
+                unsafe_allow_html=True
+            )
+
+        # 2. RENDER THE CHAT UI
+        if "chat_messages" in st.session_state:
+            with st.container(border=True):
+                # We use 'enumerate' here to give every link a mathematically unique ID!
+                for idx, msg in enumerate(st.session_state["chat_messages"]):
+                    avatar = "👤" if msg["role"] == "user" else "🤖"
+                    with st.chat_message(msg["role"], avatar=avatar):
+                        st.markdown(msg["content"])
+                        
+                        # RENDER THE HYBRID VISUALIZER IF ATTACHED
+                        # 🟢 THE FIX: Check if visuals has actual text, not just if the key exists!
+                        if msg.get("visuals"):
+                            ex_name = msg["visuals"]
+                            video_url = msg.get("video_url")
+                            
+                            if video_url:
+                                # 🎬 Direct text-link button! No expander required.
+                                if st.button(f"🎥 View Demonstration: {ex_name}", key=f"modal_link_{idx}", type="tertiary"):
+                                    play_video_modal(video_url)
+                            else:
+                                st.caption(f"⚠️ *Could not fetch video tutorial for {ex_name}.*")
+
+        # 3. HANDLE USER INPUT
+        prompt = st.chat_input("Ask Coach...")
+        if prompt:
+            # 1. Save user prompt to screen and DB
+            st.session_state["chat_messages"].append({"role": "user", "content": prompt})
+            save_coach_message(active_user, "user", prompt)
+            
+            # Instantly draw the user's message so the UI feels snappy
+            with st.chat_message("user", avatar="👤"):
+                st.markdown(prompt)
+
+            # 2. Open the Coach's chat bubble
+            with st.chat_message("assistant", avatar="🤖"):
+                with st.spinner("Coach is holding the clipboard..."):
+                    try:
+                        # Send the user's message to the AI
+                        response = st.session_state["coach_chat"].send_message(prompt)
+                        
+                        # ==========================================
+                        # 🛠️ THE TOOL INTERCEPTOR & ROUTER
+                        # ==========================================
+                        if response.function_calls:
+                            # The AI wants to use a tool! Grab the request.
+                            fc = response.function_calls[0]
+                            args = dict(fc.args)
+                            
+                            # Force the active_user into the arguments
+                            args["user_name"] = active_user 
+                            
+                            # 🟢 THE ROUTER: Check WHICH tool the AI wants to use!
+                            if fc.name == "ai_log_workout_set":
+                                tool_result_string = ai_log_workout_set(**args)
+                                
+                            elif fc.name == "ai_update_dossier":
+                                tool_result_string = ai_update_dossier(**args)
+                                
+                            else:
+                                tool_result_string = f"Error: Unknown tool called: {fc.name}"
+                            
+                            # Hand the database success/error message BACK to the AI 
+                            response = st.session_state["coach_chat"].send_message(
+                                types.Part.from_function_response(
+                                    name=fc.name,
+                                    response={"result": tool_result_string}
+                                )
+                            )
+                        # ==========================================
+
+                        # 3. Handle the final text response
+                        raw_text = response.text
+                        
+                        # (Your existing video extraction logic)
+                        import re
+                        exercise_match = re.search(r'\[EXERCISE:\s*(.*?)\]', raw_text, re.IGNORECASE)
+                        
+                        if exercise_match:
+                            exercise_name = exercise_match.group(1).strip()
+                            clean_text = re.sub(r'\[EXERCISE:\s*.*?\]', '', raw_text, flags=re.IGNORECASE).strip()
+                            real_video_url = get_youtube_embed_url(exercise_name)
+                            
+                            st.markdown(clean_text) # Print to screen
+                            st.session_state["chat_messages"].append({"role": "assistant", "content": clean_text, "visuals": exercise_name, "video_url": real_video_url})
+                            save_coach_message(active_user, "assistant", clean_text, exercise_name, real_video_url)
+                        else:
+                            st.markdown(raw_text) # Print to screen
+                            st.session_state["chat_messages"].append({"role": "assistant", "content": raw_text})
+                            save_coach_message(active_user, "assistant", raw_text)
+                            
+                        # Refresh the app to lock everything in!
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Coach hit a snag: {e}")
+
+        # 4. HANDLE THE AI GENERATION 
+        if "chat_messages" in st.session_state and len(st.session_state["chat_messages"]) > 0:
+            last_message = st.session_state["chat_messages"][-1]
+            
+            if last_message["role"] == "user":
+                with st.spinner("Coach is typing..."):
+                    try:
+                        response = st.session_state["coach_chat"].send_message(last_message["content"])
+                        raw_text = response.text
+                        
+                        exercise_match = re.search(r'\[EXERCISE:\s*(.*?)\]', raw_text, re.IGNORECASE)
+                        
+                        if exercise_match:
+                            exercise_name = exercise_match.group(1).strip()
+                            clean_text = re.sub(r'\[EXERCISE:\s*.*?\]', '', raw_text, flags=re.IGNORECASE).strip()
+                            
+                            real_video_url = get_youtube_embed_url(exercise_name)
+                            
+                            st.session_state["chat_messages"].append({
+                                "role": "assistant", 
+                                "content": clean_text,
+                                "visuals": exercise_name,
+                                "video_url": real_video_url  
+                            })
+                            
+                            # Use active_user!
+                            save_coach_message(active_user, "assistant", clean_text, exercise_name, real_video_url)
+                            
+                        else:
+                            st.session_state["chat_messages"].append({"role": "assistant", "content": raw_text})
+                            
+                            # Use active_user!
+                            save_coach_message(active_user, "assistant", raw_text)
+                            
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Coach hit a snag: {e}")
 
     # ------------------------------------------
     # 🏋️ TAB 2: LOG A SESSION (FLATTENED UI)
@@ -679,9 +944,60 @@ if check_password():
                         st.session_state["force_db_refresh"] = True
                         st.session_state["form_reset"] += 1
                         st.success("🔥 Activity Successfully Logged to Cloud!")
-                        st.rerun()
+                        # 🟢 FIX #3: Remove st.rerun() - let Streamlit handle the update
+                        # st.rerun() causes cascading re-renders and unnecessary Garmin API calls
                     else:
                         st.error("❌ Failed to log entry.")
+
+        # ==========================================
+        # 🟢 HISTORY & DELETION ENGINE
+        # ==========================================
+        st.write("---")
+        with st.expander("📝 Edit / Delete Past Logs"):
+            if not log_df.empty:
+                user_history_df = log_df[log_df["User"] == user].sort_values(by="Date", ascending=False)
+                if not user_history_df.empty:
+                    
+                    # 🟢 THE FIX: Re-enable the editor, but lock the text fields
+                    edited_df = st.data_editor(
+                        user_history_df, 
+                        num_rows="dynamic", 
+                        disabled=["id", "Date", "Activity", "Body Weight", "Details"], 
+                        column_config={
+                            "id": None,    # Keep the ID hidden from the UI
+                            "User": None   # Keep the User hidden
+                        },
+                        key="log_editor"
+                    )
+                    
+                    # 🟢 THE SUPABASE DELETION ENGINE
+                    if len(edited_df) < len(user_history_df):
+                        if st.button("🔴 Confirm Deletion from Cloud Database", type="primary"):
+                            with st.spinner("Deleting..."):
+                                try:
+                                    # 1. Figure out exactly which IDs were deleted from the UI
+                                    original_ids = set(user_history_df['id'].dropna())
+                                    remaining_ids = set(edited_df['id'].dropna())
+                                    
+                                    # 🟢 THE BULLETPROOF FIX: Force NumPy data types into standard Python Integers
+                                    raw_deleted_ids = original_ids - remaining_ids
+                                    deleted_ids = [int(float(x)) for x in raw_deleted_ids]
+                                    
+                                    if deleted_ids:
+                                        # 2. Grab the exact table name using the logic you already built
+                                        from database import get_target_table
+                                        target_table = get_target_table()
+                                        
+                                        # 3. Execute the delete command via Supabase API
+                                        response = supabase.table(target_table).delete().in_("id", deleted_ids).execute()
+                                        
+                                        # 4. Trigger the refresh loop
+                                        st.session_state["force_db_refresh"] = True
+                                        st.success(f"✅ {len(deleted_ids)} log(s) successfully deleted!")
+                                        # 🟢 FIX #3: Remove st.rerun() - state update alone will refresh the UI
+                                        # st.rerun() causes full app reset + cascading Garmin fetches
+                                except Exception as e:
+                                    st.error(f"Deletion failed. System Error: {e}")
 
     # ------------------------------------------
     # 📈 TAB 3: PROGRESS CHARTS
@@ -748,7 +1064,7 @@ if check_password():
 
                 # 3. ADD A HORIZONTAL GOAL LINE
                 fig.add_hline(
-                    y=current_goal, # Now dynamically pulls from your sidebar variable!
+                    y=st.session_state.get("global_goal_weight", 0), # Now dynamically pulls from your sidebar variable!
                     line_dash="dash", 
                     line_color="green", 
                     opacity=0.8,
@@ -905,54 +1221,115 @@ if check_password():
                 st.info(f"No {target_lift} sessions found in your history yet. Time to hit the iron!")
 
     # ------------------------------------------
-    # 📋 TAB 4: HISTORY LOG
+    # 📚 TAB 4: TRAINING BLUEPRINT
     # ------------------------------------------
-    with tab4:
-        st.subheader(f"{user}'s Training History")
-        if not log_df.empty:
-            user_history_df = log_df[log_df["User"] == user].sort_values(by="Date", ascending=False)
-            if not user_history_df.empty:
+    with tab4:        
+        st.subheader("🧠 Coaching Philosophy & Blueprint")
+        st.write("---")
+        
+        # Pull in your logic from blueprint.py
+        from blueprint import WORKOUT_FRAMEWORKS
+        
+        # Helper function to clean citations from text
+        def clean_citations(text):
+            """Remove [cite: ...] markers for cleaner display"""
+            import re
+            return re.sub(r'\[cite:.*?\]', '', text).strip()
+        
+        # Introduction to the 4-phase system
+        st.markdown("""
+        Your training program is structured around **4 progressive phases**, each designed with a specific purpose to build strength, 
+        muscle, endurance, and conditioning. The Coach adapts workouts daily based on your current phase's rules, equipment, and weekly structure.
+        
+        **Phase progression** is based on your training readiness and goals. Phases typically last 4-6 weeks before advancing.
+        """)
+        st.divider()
+        
+        # Phase Overview - Show all 4 phases at a glance
+        st.markdown("### 📋 Training Phases Overview")
+        
+        phase_list = list(WORKOUT_FRAMEWORKS.items())
+        for idx, (phase_name, framework) in enumerate(phase_list, 1):
+            is_active = phase_name.split(":")[0] in current_phase
+            phase_emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"][idx - 1]
+            current_indicator = " ⭐ **CURRENT**" if is_active else ""
+            focus_summary = clean_citations(framework.get('focus', ''))
+            
+            st.markdown(f"**{phase_emoji} {phase_name}**{current_indicator}")
+            st.caption(focus_summary)
+        
+        st.divider()
+        
+        # Render each Phase as a detailed expander with structured callouts
+        st.markdown("### 🎯 Phase Details")
+        for idx, (phase_name, framework) in enumerate(phase_list, 1):
+            is_active = phase_name.split(":")[0] in current_phase
+            phase_emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"][idx - 1]
+            expander_title = f"{phase_emoji} {phase_name} (CURRENT)" if is_active else f"{phase_emoji} {phase_name}"
+            
+            with st.expander(expander_title, expanded=is_active):
+                # Extract the focus (remove citations for clean display)
+                focus_text = clean_citations(framework.get('focus', ''))
+                st.markdown(f"**🎯 Purpose:** {focus_text}")
                 
-                # 🟢 THE FIX: Re-enable the editor, but lock the text fields
-                edited_df = st.data_editor(
-                    user_history_df, 
-                    num_rows="dynamic", 
-                    disabled=["id", "Date", "Activity", "Body Weight", "Details"], 
-                    column_config={
-                        "id": None,    # Keep the ID hidden from the UI
-                        "User": None   # Keep the User hidden
-                    },
-                    key="log_editor"
-                )
+                # Extract rep ranges and rest from lifting_rules
+                lifting_rules = clean_citations(framework.get('lifting_rules', ''))
+                st.markdown(f"**💪 Lifting Guidelines:** {lifting_rules}")
                 
-                # 🟢 THE SUPABASE DELETION ENGINE
-                if len(edited_df) < len(user_history_df):
-                    if st.button("🔴 Confirm Deletion from Cloud Database", type="primary"):
-                        with st.spinner("Deleting..."):
-                            try:
-                                # 1. Figure out exactly which IDs were deleted from the UI
-                                original_ids = set(user_history_df['id'].dropna())
-                                remaining_ids = set(edited_df['id'].dropna())
-                                
-                                # 🟢 THE BULLETPROOF FIX: Force NumPy data types into standard Python Integers
-                                raw_deleted_ids = original_ids - remaining_ids
-                                deleted_ids = [int(float(x)) for x in raw_deleted_ids]
-                                
-                                if deleted_ids:
-                                    # 2. Grab the exact table name using the logic you already built
-                                    from database import get_target_table
-                                    target_table = get_target_table()
-                                    
-                                    # 3. Execute the delete command via Supabase API
-                                    response = supabase.table(target_table).delete().in_("id", deleted_ids).execute()
-                                    
-                                    # 4. Trigger the refresh loop
-                                    st.session_state["force_db_refresh"] = True
-                                    st.success(f"✅ {len(deleted_ids)} log(s) successfully deleted!")
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"Deletion failed. System Error: {e}")
-
+                # Weekly structure from weekly_cadence
+                weekly_structure = clean_citations(framework.get('weekly_cadence', ''))
+                st.markdown(f"**📅 Weekly Structure:** {weekly_structure}")
+                
+                # AI coaching approach
+                st.markdown("---")
+                ai_approach = clean_citations(framework.get('ai_instructions', ''))
+                st.markdown(f"**🤖 Coaching Focus:** {ai_approach}")
+        
+        st.divider()
+        
+        # Weekly Baseline Calendar Flow Reference
+        st.markdown("### 🌲 Weekly Cross-Training Architecture")
+        col_sch1, col_sch2 = st.columns(2)
+        with col_sch1:
+            st.markdown("""
+            * **Monday:** 🏋️ Workout A (Strength / Split Focus)
+            * **Tuesday:** 🚲 Mountain Biking / Hiking / Walking (Cardio, 30-45 mins)
+            * **Wednesday:** 🏋️ Workout B (Strength / Split Focus)
+            """)
+        with col_sch2:
+            st.markdown("""
+            * **Thursday:** 🧘 Walk / Low-Intensity Cardio & Mobility Stretch
+            * **Friday:** 🏋️ Workout C (Full Body / Circuit Integration)
+            * **Saturday / Sunday:** 👨‍👩‍👧‍👦 Family Active Recovery & Full System Rest
+            """)    
+        st.divider()
+        
+        # Enhanced: How to use your Coach
+        st.markdown("""
+        ### 🤖 How to Use Your Coach
+        
+        The Coach **adapts all workouts to your current phase's rules**, equipment availability, and weekly structure. 
+        Your daily workouts follow the phase's rep ranges, rest periods, and coaching approach.
+        
+        **Example Prompts to Try:**
+        """)
+        
+        col_ex1, col_ex2 = st.columns(2)
+        with col_ex1:
+            st.markdown("""
+            * *"I'm at the home gym—build me a workout using the current Phase's rules."*
+            * *"I'm feeling sore today; adjust for more mobility and active recovery."*
+            * *"Build me a quick 20-minute session before work."*
+            * *"I have access to heavy weights today—maximize this!"*
+            """)
+        with col_ex2:
+            st.markdown("""
+            * *"Build me an intense metabolic circuit—push the cardio."*
+            * *"I'm in Phase 3—focus on strength and heavy lifts."*
+            * *"Can you do a lower-body AMRAP session?"*
+            * *"Design a workout for TRX and bodyweight only."*
+            """)                         
+           
     # ==========================================
     # TAB 5: 📢 WHAT'S NEW (CHANGELOG)
     # ==========================================
@@ -1166,26 +1543,7 @@ if check_password():
                             "Version": st.column_config.TextColumn("Version", disabled=True)
                         }
                     )
-
-                    # 🟢 SEMANTIC VERSIONING AUTO-CALCULATOR
-                    def calculate_next_version(current_version, categories_in_release):
-                        try:
-                            major, minor, patch = map(int, current_version.replace('v', '').strip().split('.'))
-                            
-                            if "Core" in categories_in_release:
-                                major += 1
-                                minor = 0
-                                patch = 0
-                            elif "UI" in categories_in_release:
-                                minor += 1
-                                patch = 0
-                            elif "Bug" in categories_in_release:
-                                patch += 1
-                            
-                            return f"{major}.{minor}.{patch}"
-                        except:
-                            return current_version 
-
+            
                     # 🟢 3. THE MAGIC BATCHING LOGIC
                     # The calculator ONLY looks at things currently sitting in "Staged"
                     mask_staged = (edited_backlog["Status"] == "Staged")
@@ -1226,7 +1584,17 @@ if check_password():
 
                     # 🟢 5. THE NEW PUSH ROUTER
                     if save_clicked or deploy_clicked:
-                        today_str = str(datetime.date.today())
+                        today_str = datetime.datetime.now(ZoneInfo("America/Chicago")).date().isoformat()
+                        # 🟢 THE DELETE FIX: Find IDs that exist in the original DB but are missing from the UI
+                        original_ids = set(df_backlog["id"].dropna().astype(int).tolist())
+                        current_ids = set(edited_backlog["id"].dropna().astype(int).tolist())
+                        deleted_ids = list(original_ids - current_ids)
+
+                        if deleted_ids:
+                            try:
+                                supabase.table("backlog").delete().in_("id", deleted_ids).execute()
+                            except Exception as e:
+                                st.error(f"❌ Failed to delete items from database: {e}")
                         
                         if deploy_clicked and categories_being_released:
                             # ONLY if they click Deploy do we stamp the dates, versions, and move to Done!
