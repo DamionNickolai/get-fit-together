@@ -855,8 +855,8 @@ if check_password():
             )
         
         # 🔄 FORM ROUTING LOGIC
-        # Determine if we should hide the weight box
-        is_bodyweight = (activity_value in BODYWEIGHT_ONLY_EXERCISES) or (activity_value in ["Body Weight Only", "Mobility / Stretching"])
+        # 🟢 UPGRADED SMART CHECK: Looks for the exercise name even if it is hidden inside a longer string
+        is_bodyweight = any(bw_ex in activity_value for bw_ex in BODYWEIGHT_ONLY_EXERCISES) or (activity_value in ["Body Weight Only", "Mobility / Stretching"])
         
         # Determine if we show sets/reps at all
         non_lifting = ["Body Weight Only", "Mountain Biking", "Hiking", "Walking", "Mobility / Stretching", "Other (Specify in Notes)"]
@@ -912,8 +912,9 @@ if check_password():
                     reps_val = int(input_reps) if input_reps.strip() else 0
                     weight_val = float(input_weight_lifted) if input_weight_lifted.strip() else 0.0
                     
+                    # 🟢 THE UNIFIED FORMATTING UPGRADE
                     if is_bodyweight:
-                        structured_log = f"{sets_val} Sets | {reps_val} Reps "
+                        structured_log = f"{sets_val} Sets | {reps_val} Reps | Bodyweight "
                     else:
                         structured_log = f"{sets_val} Sets | {reps_val} Reps | {weight_val} lbs "
                 except ValueError:
