@@ -1,6 +1,5 @@
 import streamlit as st
 from supabase import create_client
-import hashlib
 
 # ==========================================
 # 🎨 LOGIN SCREEN STYLING
@@ -45,98 +44,90 @@ def set_login_background(image_url):
     )
 
 def check_password():
-    """Returns `True` if the user has a valid password or secure URL token."""
+    """Returns `True` if the user has a valid Supabase Auth session."""
     
-    # --- 1. MAGIC LINK / URL TOKEN CHECKER ---
-    # Look for saved bookmarks containing ?user=...&auth=...
-    query_params = st.query_params
-    url_user = query_params.get("user")
-    url_token = query_params.get("auth")
-
-    def perform_login(username, raw_password=None, url_hash=None):
-        """Core login logic handling both manual passwords and URL hashes."""
-        try:
-            # Connect using the secure Service Key
-            supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_SERVICE_KEY"])
-            response = supabase.table("users").select("*").ilike("username", username).execute()
-            
-            if response.data:
-                db_pass = response.data[0]["password"]
-                # Generate a secure hash of the real password
-                db_hash = hashlib.sha256(db_pass.encode()).hexdigest()
-                
-                is_valid = False
-                # Check if they typed the right password OR if their URL hash matches
-                if raw_password and raw_password == db_pass:
-                    is_valid = True
-                elif url_hash and url_hash == db_hash:
-                    is_valid = True
-
-                if is_valid:
-                    st.session_state["password_correct"] = True
-                    st.session_state["logged_in_user"] = response.data[0]["username"]
-                    
-                    # 🟢 THE AUTHENTICATION BRIDGE: Give the AI Coach exactly what it's looking for!
-                    st.session_state["username"] = response.data[0]["username"]
-                    
-                    # Load all the custom styling from Supabase into memory
-                    user_data = response.data[0]
-                    st.session_state["user_role"] = user_data.get("role", "user")
-                    st.session_state["primary_color"] = user_data.get("primary_color", "#1E3A8A")
-                    st.session_state["sidebar_color"] = user_data.get("sidebar_color", "#162A61")
-                    st.session_state["line_color"] = user_data.get("line_color", "#60A5FA")
-                    st.session_state["garmin_prefix"] = user_data.get("garmin_prefix", username.lower())
-                    
-                    # 🟢 INJECT MAGIC LINK: Update the browser URL so they can bookmark it
-                    st.query_params["user"] = response.data[0]["username"]
-                    st.query_params["auth"] = db_hash
-                    return True
-        except Exception as e:
-            st.error(f"Database Connection Error: {e}")
-        return False
-
-    # 🟢 SILENT LOGIN: If they aren't logged in yet but have URL params, try the magic link
-    if not st.session_state.get("password_correct", False) and url_user and url_token:
-        if perform_login(username=url_user, url_hash=url_token):
-            return True # Magic link worked, bypass the screen!
-
     # Return True if the user is already actively logged in
     if st.session_state.get("password_correct", False):
         return True
 
-    # --- 2. THE UI: Restored and Cleaned Up ---
-    
-    # 🟢 ACTIVATE THE BACKGROUND
-    
+    def perform_login(email, password):
+        """Core login logic handling password verification using Supabase Auth."""
+        try:
+            # Connect using the safe ANON key 
+            supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+            
+            # Authenticate securely through Supabase Auth
+            auth_response = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": password
+            })
+            
+            # If successful, link their metadata to the app settings
+            if auth_response.user:
+                metadata = auth_response.user.user_metadata
+                username = metadata.get("username")
+                
+                # DEBUG CHECK 1: Did we get the metadata?
+                if not username:
+                    st.warning("⚠️ DEBUG: Login successful, but no 'username' found in Auth metadata!")
+                    return False
+                
+                # Query your public table (Changed .eq to .ilike to ignore capitalization!)
+                user_record = supabase.table("users").select("*").ilike("username", username).execute()
+                
+                if user_record.data:
+                    db_user = user_record.data[0]
+                    st.session_state["password_correct"] = True
+                    st.session_state["logged_in_user"] = db_user["username"]
+                    
+                    # 🟢 THE AUTHENTICATION BRIDGE
+                    st.session_state["username"] = db_user["username"]
+                    
+                    st.session_state["user_role"] = metadata.get("role", "user") 
+                    st.session_state["primary_color"] = db_user.get("primary_color", "#1E3A8A")
+                    st.session_state["sidebar_color"] = db_user.get("sidebar_color", "#162A61")
+                    st.session_state["line_color"] = db_user.get("line_color", "#60A5FA")
+                    st.session_state["garmin_prefix"] = metadata.get("garmin_prefix", username.lower())
+                    
+                    st.query_params.clear()
+                    return True
+                else:
+                    # DEBUG CHECK 2: Did the table lookup fail?
+                    st.warning(f"⚠️ DEBUG: Login successful, but couldn't find '{username}' in the public.users table!")
+                    return False
+                    
+        except Exception as e:
+            # DEBUG CHECK 3: Did Supabase reject the password/email?
+            st.error(f"⚠️ DEBUG: Supabase Auth Error: {e}")
+        return False
+
+    # --- THE UI ---
     bg_url = st.secrets["app_config"]["bg_image_url"]
     set_login_background(image_url=bg_url)
     
-    st.markdown("<h2 style='text-align: center;'>🔒 Get Fit Together</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>🔒 Home Sync Login</h2>", unsafe_allow_html=True)
     
     def password_entered():
-        # Look for the newly named widget key!
-        entered_username = st.session_state.get("login_username_input", "").strip()
+        # Triggered when the user clicks 'Log In'
+        entered_email = st.session_state.get("email", "").strip() 
         entered_password = st.session_state.get("password", "")
         
-        if perform_login(username=entered_username, raw_password=entered_password):
+        if perform_login(email=entered_email, password=entered_password):
             if "password" in st.session_state:
                 del st.session_state["password"] # Clear the password from memory for security
         else:
-            # 🟢 This is the ONLY time we set it to False!
             st.session_state["password_correct"] = False
             
-    # Wrap in a form to keep it grouped and allow 'Enter' to submit
     col1, col2, col3 = st.columns([1, 2, 1]) 
     with col2:
         with st.form("login_form"):
-            # We changed the key so it doesn't conflict with our permanent memory!
-            st.text_input("Username", key="login_username_input", autocomplete="username")
+            # Notice we are asking for an Email now!
+            st.text_input("Email", key="email", autocomplete="email")
             st.text_input("Password", type="password", key="password", autocomplete="current-password")
             
             st.form_submit_button("Log In", on_click=password_entered)
 
-        # It will only show this error if a login attempt actually failed
         if "password_correct" in st.session_state and st.session_state["password_correct"] is False:
-            st.error("😕 User not known or password incorrect")
+            st.error("😕 Email not recognized or password incorrect")
         
     return False
