@@ -27,7 +27,6 @@ def get_user_history_df(user_name):
     """Fetches a user's history from the appropriate Supabase environment table."""
     target_table = get_target_table()
     try:
-        # 🟢 THE FIX: Change select(...) to select("*") so we pull the database 'id'
         response = supabase.table(target_table).select("*").eq("User", user_name).order("Date", desc=True).limit(50).execute()
         
         if response.data:
@@ -36,10 +35,14 @@ def get_user_history_df(user_name):
             if "Body_Weight" in df.columns:
                 df = df.rename(columns={"Body_Weight": "Body Weight"})
             return df
-        return pd.DataFrame()
+            
+        # 🟢 THE FIX: If they have no data, return an empty table that STILL has the right column headers!
+        return pd.DataFrame(columns=["id", "User", "Date", "Activity", "Body Weight", "Details"])
+        
     except Exception as e:
         print(f"Error reading history from Supabase: {e}")
-        return pd.DataFrame()
+        # 🟢 Catch the error with the same blank template
+        return pd.DataFrame(columns=["id", "User", "Date", "Activity", "Body Weight", "Details"])
 
 def check_and_autolog_garmin_weight(user_name, today_date, garmin_weight_lbs):
     """Inserts a single Garmin weight entry safely without creating duplicates."""

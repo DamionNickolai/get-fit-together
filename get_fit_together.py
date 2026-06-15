@@ -99,7 +99,7 @@ if check_password():
     page_bg_color = st.session_state.get("primary_color", "#1F2937")
     side_bg = st.session_state.get("sidebar_color", "#111827")
     chart_line_color = st.session_state.get("line_color", "#34D399")
-    g_prefix = st.session_state.get("garmin_prefix", "").lower()
+    g_prefix = (st.session_state.get("garmin_prefix") or "").lower()
 
     # Notice we use the f-string (f""") and double brackets {{ }} here!
     st.markdown(f"""
