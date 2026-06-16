@@ -334,7 +334,7 @@ def ai_log_workout_set(user_name: str, exercise_name: str, sets: int, reps: int,
     except Exception as e:
         return f"ERROR: {str(e)}"
     
-def ai_update_dossier(user_name: str, new_phase: str = None, new_equipment: str = None, new_injuries: str = None, new_goal_weight: float = None) -> str:
+def ai_update_dossier(user_name: str, new_phase: str = None, new_equipment: str = None, new_injuries: str = None, new_goal_weight: float = None, new_primary_goal: str = None, new_age: int = None) -> str:
     """
     Updates the user's permanent fitness profile (Dossier) in the database.
     Call this tool WHENEVER the user mentions a new injury, a change in equipment, a new workout phase, or a change to their goal weight.
@@ -345,6 +345,8 @@ def ai_update_dossier(user_name: str, new_phase: str = None, new_equipment: str 
         new_equipment: Provide if the user mentions new/different equipment.
         new_injuries: Provide if the user mentions a new injury or says an old one healed.
         new_goal_weight: Provide if the user explicitly states a new target or goal weight in pounds.
+        new_primary_goal: Provide if the user explicitly states a new primary fitness goal.
+        new_age: Provide if the user explicitly states a new age.
     """
     try:
         current_profile = get_user_profile(user_name)
@@ -355,6 +357,8 @@ def ai_update_dossier(user_name: str, new_phase: str = None, new_equipment: str 
             "available_equipment": new_equipment if new_equipment else current_profile.get("available_equipment"),
             "nagging_injuries": new_injuries if new_injuries else current_profile.get("nagging_injuries"),
             "goal_weight": new_goal_weight if new_goal_weight else current_profile.get("goal_weight"),
+            "primary_goal": new_primary_goal if new_primary_goal else current_profile.get("primary_goal"),
+            "age": new_age if new_age else current_profile.get("age"),
             "updated_at": datetime.now(ZoneInfo("America/Chicago")).isoformat()
         }
         

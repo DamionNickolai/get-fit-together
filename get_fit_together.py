@@ -49,7 +49,7 @@ from workouts import ROUTINES
 from utils import calculate_next_version, get_youtube_embed_url, safe_int_convert
 
 # 🟢 3. APP VERSIONING
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 st.session_state["APP_VERSION"] = APP_VERSION
 
 # ==========================================
@@ -85,7 +85,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
-# 🟢 THE BOUNCER: This function checks your URL, logs you in, AND fetches your colors!
 if check_password():
 
     # --- 3. DYNAMIC METADATA & COLOR THEMING ---
@@ -344,17 +343,16 @@ if check_password():
     col7.metric("Weight (lbs)", display_weight if display_weight > 0 else "—")
     col8.metric("Goal (lbs)", current_goal)
     
-    # ==========================================
-    # ⚙️ SIDEBAR UTILITY FOOTER 
-    # ==========================================
     # 🟢 THE FIX: Define the reset_id globally BEFORE the bug reporter needs it!
     if "form_reset" not in st.session_state:
         st.session_state["form_reset"] = 0
     reset_id = st.session_state["form_reset"]
 
-    st.sidebar.markdown("---")
-    st.sidebar.divider() 
-    
+    # ==========================================
+    # ⚙️ PERSONAL SETTINGS 
+    # ==========================================
+    st.sidebar.divider()
+
     # --- SIDEBAR: UNIFIED USER DOSSIER ---
     with st.sidebar.expander("⚙️ My Fitness Profile", expanded=False):
         # 🟢 THE FIX: We explicitly define the user and fetch the data right here!
@@ -362,20 +360,41 @@ if check_password():
         user_profile = get_user_profile(active_user)
         
         # Safely extract the variables
-        current_goal_weight = float(user_profile.get("goal_weight", 0) or 0)
-        st.session_state["global_goal_weight"] = current_goal_weight
+        current_goal_weight = float(user_profile.get("goal_weight", 0) or 0)        
+        primary_goal = user_profile.get("primary_goal", "General Fitness")
+        current_age = int(user_profile.get("age", 30) or 30)
         current_phase = user_profile.get("current_phase", "Phase 1: Foundation & Endurance")
         equipment = user_profile.get("available_equipment", "Full Gym")
         injuries = user_profile.get("nagging_injuries", "None")
+
+        # 🟢 GLOBAL SYNC: Broadcast this weight so Tab 3 and Garmin Vitals can see it!
+        st.session_state["global_goal_weight"] = current_goal_weight
         
         # The UI Elements
-        new_goal = st.number_input("Target Goal Weight (lbs)", min_value=0.0, value=current_goal_weight, step=1.0)
+        col1, col2 = st.columns(2)
+        with col1:
+            new_age = st.number_input("Age", min_value=10, max_value=120, value=current_age, step=1)
+        with col2:
+            new_goal = st.number_input("Goal Weight (lbs)", min_value=0.0, value=current_goal_weight, step=1.0)
+
+        new_primary_goal = st.text_area("Primary Focus / Goals", value=primary_goal, height=68)
         
-        new_phase = st.selectbox(
-            "Current Phase", 
-            ["Phase 1: Foundation & Endurance", "Phase 2: Hypertrophy (Muscle Building for Fat Loss)", "Phase 3: Strength & Power", "Phase 4: Metabolic Conditioning"],
-            index=["Phase 1", "Phase 2", "Phase 3", "Phase 4"].index(current_phase.split(":")[0]) if current_phase else 0
-        )
+        # 🟢 NEW: The expanded, bulletproof phase selector
+        phase_options = [
+            "Phase 1: Foundation & Endurance", 
+            "Phase 2: Hypertrophy (Muscle Building for Fat Loss)", 
+            "Phase 3: Strength & Power", 
+            "Phase 4: Metabolic Conditioning",
+            "Open Gym: Free Form Training"
+        ]
+        
+        phase_prefix = current_phase.split(":")[0] if current_phase else "Phase 1"
+        try:
+            default_index = ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Open Gym"].index(phase_prefix)
+        except ValueError:
+            default_index = 0
+
+        new_phase = st.selectbox("Current Phase", phase_options, index=default_index)
         
         new_equip = st.text_area("Available Equipment", value=equipment, height=68)
         new_injuries = st.text_area("Nagging Injuries", value=injuries, height=68)
@@ -384,16 +403,24 @@ if check_password():
             try:
                 supabase.table("gym_user_profiles").upsert({
                     "username": active_user,
-                    "current_phase": new_phase,
-                    "available_equipment": new_equip,
-                    "nagging_injuries": new_injuries,
-                    "goal_weight": new_goal,
-                    "updated_at": datetime.datetime.now(ZoneInfo("America/Chicago")).isoformat()
+                        "age": new_age,
+                        "primary_goal": new_primary_goal,
+                        "current_phase": new_phase,
+                        "available_equipment": new_equip,
+                        "nagging_injuries": new_injuries,
+                        "goal_weight": new_goal,
+                        "updated_at": datetime.datetime.now(ZoneInfo("America/Chicago")).isoformat()
                 }).execute()
                 st.success("Profile Updated!")
                 st.rerun() 
             except Exception as e:
                 st.error(f"Failed to update: {e}")
+
+    st.sidebar.divider() 
+
+    # ==========================================
+    # ⚙️ SIDEBAR UTILITY FOOTER 
+    # ==========================================
 
     # 🟢 THE PANIC BUTTON (Now with Role-Based Categories!)
     with st.sidebar.expander("🐛 Report an Issue"):
@@ -465,20 +492,13 @@ if check_password():
             else:
                 st.info("No raw diagnostic payload found.")
         
-    # 🔄 Public Log Out Button (Visible to everyone)
-    if st.sidebar.button("🚪 Switch User / Log Out", width='stretch'):
+    # 🔄 Public Log Out Button
+    if st.sidebar.button("🚪 Switch User / Log Out", use_container_width=True):
+        
+        # Completely nuke the session state
         for key in list(st.session_state.keys()):
-            if "live_garmin_client" in key or "garmin_token" in key:
-                del st.session_state[key]
+            del st.session_state[key]
         
-        # 🟢 THE FIX: We completely delete the password memory instead of setting it to False!
-        if "password_correct" in st.session_state:
-            del st.session_state["password_correct"]
-            
-        st.session_state["logged_in_user"] = None
-        st.session_state["user_role"] = None
-        
-        # 🟢 Wipes the magic URL tokens
         st.query_params.clear() 
         st.rerun()
 
@@ -586,9 +606,11 @@ if check_password():
                     recent_workouts, 
                     recent_vitals, 
                     pr_text,
-                    current_phase, # 🟢 NEW
-                    equipment,     # 🟢 NEW
-                    injuries       # 🟢 NEW
+                    current_phase, 
+                    equipment,     
+                    injuries,      
+                    primary_goal,  
+                    current_age
                 )
                 
                 if error:
@@ -612,15 +634,19 @@ if check_password():
                             } for msg in db_history
                         ]
                         
+                        # 🟢 PYLANCE FIX: Grab the phase locally so your IDE stops showing red text!
+                        active_user = st.session_state["username"]
+                        local_profile = get_user_profile(active_user)
+                        active_phase = local_profile.get("current_phase", "Phase 1: Foundation & Endurance")
+                        
                         # B. Inject the memories into the AI's internal brain!
                         ai_history = []
                         for msg in db_history:
                             ai_role = "user" if msg["role"] == "user" else "model"
                             
-                            # 🟢 THE GOOGLE API FIX: Google requires history to start with a 'user' message.
-                            # If the first DB row is the Coach's Briefing, we inject a hidden user prompt first!
+                            # 🟢 THE GOOGLE API FIX: Remind it of the phase!
                             if len(ai_history) == 0 and ai_role == "model":
-                                ai_history.append({"role": "user", "parts": ["Analyze my Garmin vitals and generate my Daily Briefing."]})
+                                ai_history.append({"role": "user", "parts": [f"Analyze my Garmin vitals and generate my Daily Briefing. My current training phase is: {active_phase}."]})
                                 
                             ai_history.append({"role": ai_role, "parts": [msg["content"]]})
                         
@@ -636,8 +662,15 @@ if check_password():
                         
                         # Trigger the Epic Daily Briefing on the first boot!
                         try:
-                            # We send an invisible prompt to the AI to generate your briefing
-                            briefing_response = st.session_state["coach_chat"].send_message("Analyze my Garmin vitals and workout plan, and generate my personalized Daily Briefing.")
+                            # 🟢 PYLANCE FIX: Grab the phase locally here too!
+                            active_user = st.session_state["username"]
+                            local_profile = get_user_profile(active_user)
+                            active_phase = local_profile.get("current_phase", "Phase 1: Foundation & Endurance")
+                            
+                            # 🟢 WAKE UP PROMPT FIX: Both lines safely bound together!
+                            wake_up_prompt = f"Analyze my Garmin vitals and generate my personalized Daily Briefing. My current training phase is: {active_phase}."
+                            briefing_response = st.session_state["coach_chat"].send_message(wake_up_prompt)
+                            
                             epic_greeting = briefing_response.text
                             
                             st.session_state["chat_messages"].append({"role": "assistant", "content": epic_greeting})
@@ -1246,13 +1279,13 @@ if check_password():
         """)
         st.divider()
         
-        # Phase Overview - Show all 4 phases at a glance
+        # Phase Overview - Show all phases at a glance
         st.markdown("### 📋 Training Phases Overview")
         
         phase_list = list(WORKOUT_FRAMEWORKS.items())
         for idx, (phase_name, framework) in enumerate(phase_list, 1):
             is_active = phase_name.split(":")[0] in current_phase
-            phase_emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"][idx - 1]
+            phase_emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "🔓"][idx - 1]
             current_indicator = " ⭐ **CURRENT**" if is_active else ""
             focus_summary = clean_citations(framework.get('focus', ''))
             
@@ -1265,7 +1298,7 @@ if check_password():
         st.markdown("### 🎯 Phase Details")
         for idx, (phase_name, framework) in enumerate(phase_list, 1):
             is_active = phase_name.split(":")[0] in current_phase
-            phase_emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"][idx - 1]
+            phase_emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "🔓"][idx - 1]
             expander_title = f"{phase_emoji} {phase_name} (CURRENT)" if is_active else f"{phase_emoji} {phase_name}"
             
             with st.expander(expander_title, expanded=is_active):

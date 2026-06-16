@@ -24,5 +24,12 @@ WORKOUT_FRAMEWORKS = {
         "lifting_rules": "Minimal rest. Cycle through supersets or AMRAPs (As Many Rounds As Possible)[cite: 69, 78].",
         "weekly_cadence": "3 Lifting Days (Upper Supersets, Lower Supersets, Full Body AMRAP), 2 Intense Outdoor Days, 1 Active Recovery, 1 Rest[cite: 70, 74, 78, 84].",
         "ai_instructions": "Workouts must be intense and keep the heart rate elevated. Pair opposing muscle groups in supersets (e.g., Push + Pull, or Quads + Hamstrings)[cite: 71, 75]. The Full Body day should be structured as a 20-minute AMRAP using Kettlebells, B52, and Bodyweight[cite: 78, 79]. For outdoor days, suggest 'Rucking' (hiking with a weighted vest/pack for 45 mins) or fast-paced continuous mountain biking[cite: 84]."
+
+    },
+    "Open Gym: Free Form Training": {
+        "focus": "Total flexibility and on-demand adaptation. The AI Coach acts as a reactive personal trainer, building whatever the user requests without enforcing strict weekly progression rules.",
+        "lifting_rules": "Adaptable to the user's specific request. Reps, sets, and rest periods should match the user's stated goal for that session (e.g., strength, hypertrophy, endurance). If the user doesn't specify, default to standard hypertrophy (3 sets of 8-12 reps).",
+        "weekly_cadence": "No strict schedule. Train based on feel, life schedule, and immediate goals.",
+        "ai_instructions": "DO NOT enforce a specific phase or strict progression. Listen entirely to the user's prompt. If they ask for a leg day, give them a leg day. If they ask for 20 minutes of HIIT, give them exactly that. Only provide constraints or corrections if their requested workout is physically dangerous."
     }
 }
