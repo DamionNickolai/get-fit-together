@@ -1,5 +1,9 @@
 import streamlit as st
 from supabase import create_client
+from streamlit_cookies_controller import CookieController
+
+# Initialize the cookie manager at the top level
+controller = CookieController()
 
 # ==========================================
 # 🎨 LOGIN SCREEN STYLING
@@ -44,11 +48,23 @@ def set_login_background(image_url):
     )
 
 def check_password():
-    """Returns `True` if the user has a valid Supabase Auth session."""
+    """Returns `True` if the user has a valid Supabase Auth session or cookie."""
     
-    # 1. Simple, clean session check. No cookies.
-    if st.session_state.get("password_correct", False):
-        return True
+    # 🟢 1. THE INTERCEPTOR: Only check for auto-logins if we aren't currently logging out!
+    if not st.session_state.get("logout_in_progress", False):
+        
+        # Check if Streamlit's temporary memory still knows we are logged in.
+        if st.session_state.get("password_correct", False):
+            return True
+
+        # THE BRIDGE: If memory was wiped, check the 30-day browser cookie!
+        cookie_session = controller.get("get_fit_session")
+        if cookie_session:
+            # Rebuild the entire session state instantly from the cookie backup
+            for key, value in cookie_session.items():
+                st.session_state[key] = value
+            st.session_state["password_correct"] = True
+            return True
 
     def perform_login(email, password):
         try:
@@ -65,6 +81,10 @@ def check_password():
                 
                 if user_record.data:
                     db_user = user_record.data[0]
+                    
+                    # 🟢 Clear the logout flag so the cookie works normally again
+                    st.session_state.pop("logout_in_progress", None)
+                    
                     st.session_state["password_correct"] = True
                     st.session_state["logged_in_user"] = db_user["username"]
                     st.session_state["username"] = db_user["username"]
@@ -74,6 +94,20 @@ def check_password():
                     st.session_state["sidebar_color"] = db_user.get("sidebar_color", "#162A61")
                     st.session_state["line_color"] = db_user.get("line_color", "#60A5FA")
                     st.session_state["garmin_prefix"] = db_user.get("garmin_prefix", username.lower())
+                    
+                    # 🟢 NEW: Save a backup dictionary to a 30-day browser cookie!
+                    session_data = {
+                        "logged_in_user": db_user["username"],
+                        "username": db_user["username"],
+                        "user_role": db_user.get("role", "user"),
+                        "primary_color": db_user.get("primary_color", "#1E3A8A"),
+                        "sidebar_color": db_user.get("sidebar_color", "#162A61"),
+                        "line_color": db_user.get("line_color", "#60A5FA"),
+                        "garmin_prefix": db_user.get("garmin_prefix", username.lower())
+                    }
+                    
+                    # 2592000 seconds = exactly 30 days
+                    controller.set("get_fit_session", session_data, max_age=2592000)
                     
                     st.query_params.clear()
                     return True
@@ -91,7 +125,7 @@ def check_password():
     except:
         pass
     
-    st.markdown("<h2 style='text-align: center;'>🔒 Home Sync Login</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>🔒 Get Fit Together</h2>", unsafe_allow_html=True)
         
     col1, col2, col3 = st.columns([1, 2, 1]) 
     with col2:

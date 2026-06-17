@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import datetime
 import plotly.express as px
-import hashlib 
 import re
 
 # 🟢 NEW: Put the Google GenAI types right here!
@@ -453,7 +452,8 @@ if check_password():
                                 "category": selected_category,
                                 "feature": f"User Reported: {user}",
                                 "priority": "High",
-                                "notes": bug_text.strip()
+                                "notes": bug_text.strip(),
+                                "app_name": "get_fit"  # 🟢 NEW: Hardcoded to Get Fit!
                             }).execute()
                             
                             st.success("✅ Sent! Thanks for the feedback.")
@@ -494,11 +494,20 @@ if check_password():
         
     # 🔄 Public Log Out Button
     if st.sidebar.button("🚪 Switch User / Log Out", use_container_width=True):
+        from streamlit_cookies_controller import CookieController
+        controller = CookieController()
         
-        # Completely nuke the session state
+        # 1. Safely nuke the fitness-specific browser cookie
+        if controller.get("get_fit_session") is not None:
+            controller.remove("get_fit_session")
+        
+        # 2. Nuke the temporary session state
         for key in list(st.session_state.keys()):
             del st.session_state[key]
-        
+            
+        # 3. Leave the ghost flag so auth.py bypasses the cookie check
+        st.session_state["logout_in_progress"] = True
+            
         st.query_params.clear() 
         st.rerun()
 
@@ -517,8 +526,8 @@ if check_password():
         "📢 What's New"
     ]
 
-    # ONLY append the Admin tab if running locally AND you are a developer
-    if role == "developer" and is_local_env:
+    # 🟢 FIX: Removed `and is_local_env` so you can see it in Production!
+    if role == "developer":
         tab_titles.append("🛠️ Admin Panel")
         
     # Generate the tabs based on the current user's role/location
@@ -534,9 +543,9 @@ if check_password():
     tab_changelog = tabs[4]
     tab_idx = 5
 
-    # Assign Admin tab if developer and local
+    # 🟢 FIX: Removed `and is_local_env` here too!
     tab_admin = None
-    if role == "developer" and is_local_env:
+    if role == "developer":
         tab_admin = tabs[tab_idx]
 
     # ------------------------------------------
@@ -1527,8 +1536,33 @@ if check_password():
                     if st.button("🔄 Refresh Data", width='stretch'):
                         st.session_state["force_admin_refresh"] = True
 
-                # Read the active backlog table directly from Supabase
-                response = supabase.table("backlog").select("*").neq("status", "Done").order("id").execute()
+                # 🟢 NEW: Synchronized Form Layout
+                with st.expander("➕ Add New Backlog Ticket", expanded=False):
+                    with st.form("add_get_fit_backlog", clear_on_submit=True):
+                        c1, c2, c3 = st.columns(3)
+                        new_status = c1.selectbox("Status", ["Backlog", "In Progress", "Blocked", "Staged", "Done"])
+                        new_category = c2.selectbox("Category", ["Core", "UI", "Bug", "Ops"])
+                        new_priority = c3.selectbox("Priority", ["High", "Medium", "Low"], index=1)
+                        # No target_app dropdown here because it's hardcoded for Get Fit!
+                        
+                        new_feature = st.text_input("New Feature or Bug")
+                        new_notes = st.text_area("Notes / Description")
+                        
+                        if st.form_submit_button("Save Ticket", type="primary"):
+                            if new_feature:
+                                supabase.table("backlog").insert({
+                                    "feature": new_feature,
+                                    "notes": new_notes,
+                                    "status": new_status,
+                                    "category": new_category,
+                                    "priority": new_priority,
+                                    "app_name": "get_fit" 
+                                }).execute()
+                                st.success("Added to Backlog!")
+                                st.session_state["force_admin_refresh"] = True
+                                st.rerun()
+
+                response = supabase.table("backlog").select("*").eq("app_name", "get_fit").neq("status", "Done").order("id").execute()
                 
                 if response.data:
                     df_backlog = pd.DataFrame(response.data)
@@ -1541,23 +1575,16 @@ if check_password():
                     })
 
                     # 🟢 THE MULTI-LEVEL SORTING FIX (Status -> Category -> Priority)
-                    # Clean up old/blank Priority data
                     df_backlog["Priority"] = df_backlog["Priority"].replace("", "Low").fillna("Low")
                     df_backlog["Priority"] = df_backlog["Priority"].astype(str).str.title()
                     
-                    # 🟢 1. UPDATE THE STATUS HIERARCHY
-                    # Add "Staged" right before Done
+                    valid_cats = ["Core", "UI", "Bug", "Ops"]
+                    
                     status_order = ["In Progress", "Backlog", "Blocked", "Staged", "Done"]
                     df_backlog["Status"] = pd.Categorical(df_backlog["Status"], categories=status_order, ordered=True)
 
                     category_order = ["Core", "UI", "Bug", "Ops"]
-                    df_backlog["Category"] = pd.Categorical(df_backlog["Category"], categories=category_order, ordered=True)
-
-                    priority_order = ["High", "Medium", "Low"]
-                    df_backlog["Priority"] = pd.Categorical(df_backlog["Priority"], categories=priority_order, ordered=True)
-                    
-                    df_backlog = df_backlog.sort_values(["Status", "Category", "Priority"])
-                    df_backlog = df_backlog.reset_index(drop=True)
+                    df_backlog["Category"] = pd.Categorical(df_backlog["Category"], categories=category_order, ordered=True)                  
 
                     # 🛑 Interactive Table
                     edited_backlog = st.data_editor(
