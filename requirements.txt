@@ -4,4 +4,4 @@ garminconnect
 plotly
 supabase
 google-genai
-streamlit-cookies-controller
+python-dotenv

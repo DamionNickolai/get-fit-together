@@ -494,19 +494,14 @@ if check_password():
         
     # 🔄 Public Log Out Button
     if st.sidebar.button("🚪 Log Out", use_container_width=True):
-        # 🟢 NEW: Import our secure isolation function from auth.py
-        from auth import get_cookie_controller
-        controller = get_cookie_controller()
-        
-        # 1. Safely nuke the fitness-specific browser cookie
-        if controller.get("get_fit_session") is not None:
-            controller.remove("get_fit_session")
-        
-        # 2. Nuke the temporary session state
+        from auth import clear_auth_session
+        clear_auth_session()
+
+        # Nuke the temporary session state
         for key in list(st.session_state.keys()):
             del st.session_state[key]
             
-        # 3. Leave the ghost flag so auth.py bypasses the cookie check
+        # Leave the ghost flag so auth.py bypasses session restore on rerun
         st.session_state["logout_in_progress"] = True
             
         st.query_params.clear() 
