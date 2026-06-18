@@ -85,6 +85,8 @@ st.markdown("""
 
 # --- 2. ENVIRONMENT DETECTION & PASSWORD SYSTEM ---
 if check_password():
+    if st.session_state.pop("post_login_clean_rerun", False):
+        st.rerun()
 
     # --- 3. DYNAMIC METADATA & COLOR THEMING ---
     user = st.session_state["logged_in_user"]
