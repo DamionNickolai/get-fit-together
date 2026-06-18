@@ -493,7 +493,7 @@ if check_password():
                 st.info("No raw diagnostic payload found.")
         
     # 🔄 Public Log Out Button
-    if st.sidebar.button("🚪 Switch User / Log Out", use_container_width=True):
+    if st.sidebar.button("🚪 Log Out", use_container_width=True):
         # 🟢 NEW: Import our secure isolation function from auth.py
         from auth import get_cookie_controller
         controller = get_cookie_controller()
