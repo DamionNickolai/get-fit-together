@@ -494,8 +494,9 @@ if check_password():
         
     # 🔄 Public Log Out Button
     if st.sidebar.button("🚪 Switch User / Log Out", use_container_width=True):
-        from streamlit_cookies_controller import CookieController
-        controller = CookieController()
+        # 🟢 NEW: Import our secure isolation function from auth.py
+        from auth import get_cookie_controller
+        controller = get_cookie_controller()
         
         # 1. Safely nuke the fitness-specific browser cookie
         if controller.get("get_fit_session") is not None:
