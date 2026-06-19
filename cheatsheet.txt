@@ -42,6 +42,19 @@ AUTO PUSH FROM LOCAL TO CLOUD:
 python push_to_dev.py
 python push_to_prod.py
 
+PUSH_TO_DEV.PY FLOW (UPDATED):
+- Fetches origin/dev, switches to dev, and pulls with --ff-only
+- Optional APP_VERSION bump in get_fit_together.py (semantic version format)
+- Shows current changes and asks to stage all with git add -A
+- Commits and pushes to origin/dev
+
+PUSH_TO_PROD.PY FLOW (UPDATED):
+- Requires clean working tree (no unstaged/staged changes)
+- Fetches origin with prune
+- Requires exact confirmation text: deploy prod
+- Switches to main, pulls with --ff-only, merges origin/dev with --ff-only
+- Pushes main and switches back to your starting branch
+
 INSTALL PACKAGES:
 pip install -r requirements.txt
 

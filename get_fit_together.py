@@ -110,28 +110,6 @@ if check_password():
         </style>
     """, unsafe_allow_html=True)
     
-    # 📡 THE BUG RADAR (Only alerts if you are the developer)
-    if role == "developer":
-        try:
-            # 🟢 SUPABASE FIX: Direct query, no dataframes needed
-            radar_response = supabase.table("backlog").select("*").eq("category", "Bug").eq("status", "Backlog").execute()
-            bug_count = len(radar_response.data) if radar_response.data else 0
-            
-            if bug_count > 0:
-                # 🟢 CUSTOM ALERT STYLING (Yellow text, No background)
-                st.markdown(
-                    f"""
-                    <div style='background-color: transparent; margin-bottom: 15px;'>
-                        <h4 style='color: #facc15; margin: 0px;'>
-                            🐞 Developer Alert: You have {bug_count} unresolved bug report(s) waiting in the Admin Panel.
-                        </h4>
-                    </div>
-                    """, 
-                    unsafe_allow_html=True
-                )
-        except Exception:
-            pass # Fails silently so it doesn't interrupt your workout logging
-
     # --- 4. ENVIRONMENT & SUPABASE CONNECTION ---
     # 🟢 THE FIX: We now pull the environment directly from your secrets.toml
     env = st.secrets.get("app_config", {}).get("environment", "production")
@@ -523,28 +501,13 @@ if check_password():
         "📚 Training Blueprint",
         "📢 What's New"
     ]
-
-    # 🟢 FIX: Removed `and is_local_env` so you can see it in Production!
-    if role == "developer":
-        tab_titles.append("🛠️ Admin Panel")
         
     # Generate the tabs based on the current user's role/location
     tabs = st.tabs(tab_titles)
 
-    # Assign the first 4 public tabs
-    tab1 = tabs[0]
-    tab2 = tabs[1]
-    tab3 = tabs[2]
-    tab4 = tabs[3]
-
-    # Assign What's New tab
-    tab_changelog = tabs[4]
-    tab_idx = 5
-
-    # 🟢 FIX: Removed `and is_local_env` here too!
-    tab_admin = None
-    if role == "developer":
-        tab_admin = tabs[tab_idx]
+    # Assign public tabs
+    tab1, tab2, tab3, tab4, tab_changelog = tabs
+    # Backlog management lives in Home Sync app now.
 
     # ------------------------------------------
     # 🤖 TAB 1: AI COACH
@@ -916,7 +879,7 @@ if check_password():
                 if not past_logs.empty:
                     past_logs = past_logs.sort_values(by="Date", ascending=False)
                     last_log = past_logs.iloc[0]
-                    last_date = last_log["Date"]
+                    last_date = last_log.get("Date", "")
                     last_details = str(last_log.get("Details", ""))
                     clean_details = last_details.split("]")[-1].strip() if "]" in last_details else last_details
                     
@@ -1377,6 +1340,7 @@ if check_password():
     if tab_changelog is not None:
         with tab_changelog:
             st.subheader("📢 What's New: Release Notes")
+            
             try:
                 # 🟢 1. GLOBAL DICTIONARY (Used by both Dev and Prod feeds)
                 cat_display = {"Core": "Core Features", "UI": "User Interface / Experience", "Bug": "Bug Fixes", "Ops": "Operations"}
@@ -1385,7 +1349,14 @@ if check_password():
                 # 2. DEV ONLY: DRAFT RELEASE PREVIEW
                 # ==========================================
                 if role == "developer" and is_local_env:
-                    staged_response = supabase.table("backlog").select("*").eq("status", "Staged").execute()
+                    staged_response = (
+                        supabase
+                        .table("backlog")
+                        .select("*")
+                        .eq("status", "Staged")
+                        .in_("app_name", ["get_fit", "Global"])
+                        .execute()
+                    )
                     
                     if staged_response.data:
                         categories = [r.get("category", "") for r in staged_response.data]
@@ -1422,7 +1393,8 @@ if check_password():
                                 task = item.get("feature", "System Update")
                                 pub_msg = item.get("public_message", "")
                                 
-                                st.markdown(f"**• {task}**")
+                                app_badge = "(Global) " if item.get("app_name") == "Global" else ""
+                                st.markdown(f"**• {app_badge}{task}**")
                                 if pub_msg and str(pub_msg).strip() not in ["", "None"]:
                                     st.caption(f"&emsp; *{pub_msg}*")
                             st.write("")
@@ -1431,7 +1403,14 @@ if check_password():
                 # ==========================================
                 # 3. PROD FEED (The Formal History)
                 # ==========================================
-                response = supabase.table("backlog").select("*").eq("status", "Done").execute()
+                response = (
+                    supabase
+                    .table("backlog")
+                    .select("*")
+                    .eq("status", "Done")
+                    .in_("app_name", ["get_fit", "Global"])
+                    .execute()
+                )
                 
                 if response.data:
                     df = pd.DataFrame(response.data)
@@ -1442,31 +1421,45 @@ if check_password():
                         "version": "Version"
                     })
                     
-                    for col in ["Release Date", "Version", "Public Message"]:
+                    for col in ["Release Date", "Version", "Public Message", "app_name"]:
                         if col not in df.columns: df[col] = ""
                         df[col] = df[col].fillna("").astype(str)
 
                     df["Release Date"] = pd.to_datetime(df["Release Date"], errors="coerce").fillna(pd.Timestamp("2000-01-01"))
+
+                    def extract_get_fit_version(row):
+                        raw_v = str(row.get("Version", "")).strip().lower().replace("v", "")
+                        app_name = str(row.get("app_name", "")).strip()
+                        if app_name == "Global":
+                            match = re.search(r"get_fit\s*:\s*([0-9]+(?:\.[0-9]+){1,2})", raw_v)
+                            return match.group(1) if match else ""
+                        return raw_v
+
+                    df["Display Version"] = df.apply(extract_get_fit_version, axis=1)
+                    df = df[df["Display Version"].astype(str).str.strip() != ""]
                     
                     def parse_version(v_str):
                         try:
                             clean_v = str(v_str).lower().replace('v', '').strip()
-                            return tuple(map(int, clean_v.split('.')))
+                            parts = [int(p) for p in clean_v.split('.') if p != ""]
+                            while len(parts) < 3:
+                                parts.append(0)
+                            return tuple(parts[:3])
                         except:
                             return (0, 0, 0)
 
                     current_app_v = parse_version(APP_VERSION)
-                    df = df[df["Version"].apply(parse_version) <= current_app_v]
+                    df = df[df["Display Version"].apply(parse_version) <= current_app_v]
                     
-                    df = df.sort_values(by=["Release Date", "Version"], ascending=[False, False])
-                    unique_versions = [v for v in df["Version"].unique() if v.strip() != ""]
+                    df = df.sort_values(by=["Release Date"], ascending=[False])
+                    unique_versions = [v for v in df["Display Version"].unique() if str(v).strip() != ""]
                     
                     recent_versions = unique_versions[:3]
                     older_versions = unique_versions[3:]
                    
                     # --- RENDER RECENT RELEASES ---
                     for v_val in recent_versions:
-                        group = df[df["Version"] == v_val]
+                        group = df[df["Display Version"] == v_val]
                         date_val = group["Release Date"].iloc[0]
                         date_str = pd.to_datetime(date_val).strftime("%Y-%m-%d") if date_val > pd.Timestamp("2000-01-01") else "Archive"
                         
@@ -1483,7 +1476,8 @@ if check_password():
                             for _, row in cat_df.iterrows():
                                 task = row.get("Feature", "System Update")
                                 pub_msg = row.get("Public Message", "")
-                                st.markdown(f"**• {task}**")
+                                app_badge = "(Global) " if row.get("app_name") == "Global" else ""
+                                st.markdown(f"**• {app_badge}{task}**")
                                 if pd.notna(pub_msg) and str(pub_msg).strip() not in ["", "None"]:
                                     st.caption(f"&emsp; *{pub_msg}*")
                             st.write("")
@@ -1493,7 +1487,7 @@ if check_password():
                     if len(older_versions) > 0:
                         with st.expander("🕰️ View Older Updates"):
                             for v_val in older_versions:
-                                group = df[df["Version"] == v_val]
+                                group = df[df["Display Version"] == v_val]
                                 date_val = group["Release Date"].iloc[0]
                                 date_str = pd.to_datetime(date_val).strftime("%Y-%m-%d") if date_val > pd.Timestamp("2000-01-01") else "Archive"
                                 
@@ -1509,7 +1503,8 @@ if check_password():
                                     for _, row in cat_df.iterrows():
                                         task = row.get("Feature", "System Update")
                                         pub_msg = row.get("Public Message", "")
-                                        st.markdown(f"**• {task}**")
+                                        app_badge = "(Global) " if row.get("app_name") == "Global" else ""
+                                        st.markdown(f"**• {app_badge}{task}**")
                                         if pd.notna(pub_msg) and str(pub_msg).strip() not in ["", "None"]:
                                             st.caption(f"&emsp; *{pub_msg}*")
                                     st.write("")
@@ -1519,204 +1514,3 @@ if check_password():
                     
             except Exception as e:
                 st.error(f"Could not load the changelog: {e}")
-
-    # ==========================================
-    # TAB 6: 🛠️ ADMIN PANEL (DEVELOPERS ONLY)
-    # ==========================================
-    if tab_admin is not None:
-        with tab_admin:
-            st.subheader("🛠️ Developer Admin Panel")
-            try:
-                col_head1, col_head2 = st.columns([4, 1])
-                with col_head1:
-                    st.write("Manage Active App Backlog & QoL Features:")
-                with col_head2:
-                    if st.button("🔄 Refresh Data", width='stretch'):
-                        st.session_state["force_admin_refresh"] = True
-
-                # 🟢 NEW: Synchronized Form Layout
-                with st.expander("➕ Add New Backlog Ticket", expanded=False):
-                    with st.form("add_get_fit_backlog", clear_on_submit=True):
-                        c1, c2, c3 = st.columns(3)
-                        new_status = c1.selectbox("Status", ["Backlog", "In Progress", "Blocked", "Staged", "Done"])
-                        new_category = c2.selectbox("Category", ["Core", "UI", "Bug", "Ops"])
-                        new_priority = c3.selectbox("Priority", ["High", "Medium", "Low"], index=1)
-                        # No target_app dropdown here because it's hardcoded for Get Fit!
-                        
-                        new_feature = st.text_input("New Feature or Bug")
-                        new_notes = st.text_area("Notes / Description")
-                        
-                        if st.form_submit_button("Save Ticket", type="primary"):
-                            if new_feature:
-                                supabase.table("backlog").insert({
-                                    "feature": new_feature,
-                                    "notes": new_notes,
-                                    "status": new_status,
-                                    "category": new_category,
-                                    "priority": new_priority,
-                                    "app_name": "get_fit" 
-                                }).execute()
-                                st.success("Added to Backlog!")
-                                st.session_state["force_admin_refresh"] = True
-                                st.rerun()
-
-                response = supabase.table("backlog").select("*").eq("app_name", "get_fit").neq("status", "Done").order("id").execute()
-                
-                if response.data:
-                    df_backlog = pd.DataFrame(response.data)
-                    df_backlog = df_backlog.fillna("")
-                    
-                    df_backlog = df_backlog.rename(columns={
-                        "status": "Status", "category": "Category", "feature": "Feature", 
-                        "priority": "Priority", "notes": "Notes", "public_message": "Public Message", 
-                        "release_date": "Release Date", "version": "Version"
-                    })
-
-                    # 🟢 THE MULTI-LEVEL SORTING FIX (Status -> Category -> Priority)
-                    df_backlog["Priority"] = df_backlog["Priority"].replace("", "Low").fillna("Low")
-                    df_backlog["Priority"] = df_backlog["Priority"].astype(str).str.title()
-                    
-                    valid_cats = ["Core", "UI", "Bug", "Ops"]
-                    
-                    status_order = ["In Progress", "Backlog", "Blocked", "Staged", "Done"]
-                    df_backlog["Status"] = pd.Categorical(df_backlog["Status"], categories=status_order, ordered=True)
-
-                    category_order = ["Core", "UI", "Bug", "Ops"]
-                    df_backlog["Category"] = pd.Categorical(df_backlog["Category"], categories=category_order, ordered=True)                  
-
-                    # 🛑 Interactive Table
-                    edited_backlog = st.data_editor(
-                        df_backlog, 
-                        num_rows="dynamic", 
-                        width="stretch", 
-                        key="admin_backlog_editor",
-                        hide_index=True,  
-                        column_config={
-                            "id": None, 
-                            # 🟢 2. ADD STAGED TO THE UI DROPDOWN
-                            "Status": st.column_config.SelectboxColumn("Status", options=["Backlog", "In Progress", "Blocked", "Staged", "Done"], required=True),
-                            "Category": st.column_config.SelectboxColumn("Category", options=["Core", "UI", "Bug", "Ops"], required=True),
-                            "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"], required=True),
-                            "Public Message": st.column_config.TextColumn("Public Message", width="large"),
-                            "Release Date": st.column_config.TextColumn("Release Date", disabled=True),
-                            "Version": st.column_config.TextColumn("Version", disabled=True)
-                        }
-                    )
-            
-                    # 🟢 3. THE MAGIC BATCHING LOGIC
-                    # The calculator ONLY looks at things currently sitting in "Staged"
-                    mask_staged = (edited_backlog["Status"] == "Staged")
-                    categories_being_released = edited_backlog.loc[mask_staged, "Category"].tolist()
-                    
-                    active_version = st.session_state.get("APP_VERSION", APP_VERSION)
-                    
-                    # Only propose a new version if there are actually things sitting in Staged!
-                    if categories_being_released:
-                        proposed_version = calculate_next_version(active_version, categories_being_released)
-                    else:
-                        proposed_version = active_version
-
-                    st.write("")
-                    col_btn1, col_btn2 = st.columns([1, 4])
-                    with col_btn1:
-                        st.markdown(
-                            f"""
-                            <div style="font-size: 13px; color: #94A3B8; margin-bottom: 4px;">Proposed Release</div>
-                            <div style="background-color: #1E293B; border: 1px solid #334155; padding: 6px; border-radius: 6px; text-align: center; color: #34D399; font-weight: 600; font-size: 16px;">
-                                v{proposed_version}
-                            </div>
-                            """, 
-                            unsafe_allow_html=True
-                        )
-                        push_version = proposed_version 
-                        
-                    with col_btn2:
-                        st.write("") 
-                        # 🟢 4. THE SPLIT BUTTONS
-                        col_save, col_deploy = st.columns([1, 1])
-                        with col_save:
-                            # This button just saves notes/statuses without touching the version number
-                            save_clicked = st.button("💾 Save Daily Work (Keep Staged)", width="stretch")
-                        with col_deploy:
-                            # This button actually cuts the production release!
-                            deploy_clicked = st.button("🚀 Cut Release & Move Staged to Done", type="primary", width="stretch")
-
-                    # 🟢 5. THE NEW PUSH ROUTER
-                    if save_clicked or deploy_clicked:
-                        today_str = datetime.datetime.now(ZoneInfo("America/Chicago")).date().isoformat()
-                        # 🟢 THE DELETE FIX: Find IDs that exist in the original DB but are missing from the UI
-                        original_ids = set(df_backlog["id"].dropna().astype(int).tolist())
-                        current_ids = set(edited_backlog["id"].dropna().astype(int).tolist())
-                        deleted_ids = list(original_ids - current_ids)
-
-                        if deleted_ids:
-                            try:
-                                supabase.table("backlog").delete().in_("id", deleted_ids).execute()
-                            except Exception as e:
-                                st.error(f"❌ Failed to delete items from database: {e}")
-                        
-                        if deploy_clicked and categories_being_released:
-                            # ONLY if they click Deploy do we stamp the dates, versions, and move to Done!
-                            edited_backlog.loc[mask_staged, "Release Date"] = today_str
-                            edited_backlog.loc[mask_staged, "Version"] = push_version
-                            edited_backlog.loc[mask_staged, "Status"] = "Done"
-
-                        # Prepare the full payload for Supabase
-                        upload_df = edited_backlog.rename(columns={
-                            "Status": "status", "Category": "category", "Feature": "feature", 
-                            "Priority": "priority", "Notes": "notes", "Public Message": "public_message", 
-                            "Release Date": "release_date", "Version": "version"
-                        })
-                        
-                        raw_records = upload_df.to_dict(orient="records")
-                        records_to_update = []
-                        records_to_insert = []
-                        
-                        for record in raw_records:
-                            clean_row = {}
-                            has_valid_id = False
-                            
-                            for key, value in record.items():
-                                if key == "id":
-                                    try:
-                                        clean_row[key] = int(float(value))
-                                        has_valid_id = True
-                                    except (ValueError, TypeError):
-                                        continue 
-                                else:
-                                    if pd.isna(value) or value is None or str(value).strip() in ["None", "nan"]:
-                                        clean_row[key] = ""
-                                    else:
-                                        clean_row[key] = value
-                                        
-                            if has_valid_id:
-                                records_to_update.append(clean_row)
-                            else:
-                                if clean_row.get("feature"): 
-                                    records_to_insert.append(clean_row)
-                        
-                        try:
-                            if records_to_update:
-                                supabase.table("backlog").upsert(records_to_update).execute()
-                            if records_to_insert:
-                                supabase.table("backlog").insert(records_to_insert).execute()
-                                
-                            if deploy_clicked:
-                                st.success(f"✅ Release {push_version} Cut! Run your deploy.py script now.")
-                                st.session_state["APP_VERSION"] = push_version
-                            else:
-                                st.success("✅ Daily progress saved!")
-                                
-                            if "admin_backlog_editor" in st.session_state:
-                                del st.session_state["admin_backlog_editor"]
-                            
-                            st.session_state["force_admin_refresh"] = True 
-                            st.rerun()
-                            
-                        except Exception as e:
-                            st.error(f"❌ Supabase rejected the payload: {e}")
-                else:
-                    st.info("Backlog is empty. Add a ticket to get started!")
-
-            except Exception as e:
-                st.error(f"Failed to load the backlog. System Error: {e}")

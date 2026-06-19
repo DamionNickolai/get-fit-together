@@ -51,6 +51,7 @@ user2_pass = "..."
 [app_config]
 default_dev_workspace = "your_local_path"
 environment = "local" # change to "production" for live deployment
+home_sync_backlog_url = "https://your-home-sync-backlog-url"
 ```
 
 ## ▶️ Run locally

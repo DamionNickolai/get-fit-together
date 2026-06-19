@@ -1,54 +1,129 @@
-import sys
-import subprocess
 import re
+import subprocess
+import sys
 
-def run_cmd(cmd):
-    """Runs a terminal command and stops the script if it fails."""
-    result = subprocess.run(cmd, shell=True, text=True)
+
+APP_FILE = "get_fit_together.py"
+
+
+def run_cmd(cmd, capture_output=False):
+    result = subprocess.run(
+        cmd,
+        text=True,
+        capture_output=capture_output,
+    )
     if result.returncode != 0:
-        print(f"\n❌ ERROR: Command failed -> {cmd}")
+        print(f"\nERROR: Command failed -> {' '.join(cmd)}")
+        if result.stdout:
+            print(result.stdout.strip())
+        if result.stderr:
+            print(result.stderr.strip())
+        sys.exit(1)
+    return result
+
+
+def git_output(args):
+    return run_cmd(["git", *args], capture_output=True).stdout.strip()
+
+
+def ensure_git_repo():
+    inside = git_output(["rev-parse", "--is-inside-work-tree"])
+    if inside.lower() != "true":
+        print("ERROR: This script must be run inside a git repository.")
         sys.exit(1)
 
-print("\n🚀 Preparing to push to DEV (Staging Environment)...")
 
-# 1. THE AUTO-VERSIONING PROMPT (Your code!)
-print("--------------------------------------------------")
-bump = input("🚀 Do you want to bump the app version for this release? (y/n): ").strip().lower()
+def working_tree_has_changes():
+    return bool(git_output(["status", "--porcelain"]))
 
-if bump == 'y':
-    new_version = input("📝 Enter the new version (e.g., 1.4.0): ").strip()
-    
+
+def validate_version(version):
+    # Accepts semantic versions like 1.2.3 or 1.2.3-alpha
+    return bool(re.match(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$", version))
+
+
+def update_app_version(new_version):
     try:
-        with open("get_fit_together.py", "r", encoding="utf-8") as f:
+        with open(APP_FILE, "r", encoding="utf-8") as f:
             content = f.read()
-            
-        content = re.sub(r'APP_VERSION\s*=\s*".*"', f'APP_VERSION = "{new_version}"', content)
-        
-        with open("get_fit_together.py", "w", encoding="utf-8") as f:
-            f.write(content)
-            
-        print(f"✅ Success! get_fit_together.py updated to v{new_version}")
-    except Exception as e:
-        print(f"❌ Failed to update version: {e}")
+
+        updated_content, replacements = re.subn(
+            r'^(APP_VERSION\s*=\s*")[^"]*(")',
+            rf'\1{new_version}\2',
+            content,
+            count=1,
+            flags=re.MULTILINE,
+        )
+
+        if replacements != 1:
+            print(f"ERROR: Could not find APP_VERSION assignment in {APP_FILE}")
+            sys.exit(1)
+
+        with open(APP_FILE, "w", encoding="utf-8") as f:
+            f.write(updated_content)
+
+        print(f"Updated {APP_FILE} APP_VERSION to {new_version}")
+    except OSError as exc:
+        print(f"ERROR: Failed to update version: {exc}")
         sys.exit(1)
 
-# 2. COMMIT MESSAGE
-print("--------------------------------------------------")
-commit_msg = input("📝 Enter a commit message (or press Enter for default): ").strip()
-if not commit_msg:
-    commit_msg = "Routine DEV update"
 
-# 3. GIT OPERATIONS
-print("\n🔄 Switching to 'dev' branch...")
-run_cmd("git checkout dev")
+def main():
+    print("\nPreparing to push to DEV (staging)...")
+    ensure_git_repo()
 
-print("📦 Packaging code...")
-run_cmd("git add .")
-run_cmd(f'git commit -m "{commit_msg}"')
+    print("Fetching latest remote refs...")
+    run_cmd(["git", "fetch", "origin", "dev"])
 
-print("☁️ Pushing to GitHub (dev branch)...")
-run_cmd("git push origin dev")
+    print("Switching to dev branch...")
+    run_cmd(["git", "switch", "dev"])
 
-print("\n✅ PUSHED TO STAGING!")
-print("📱 Go test the GFT-DEV app on your phone.")
-print("💡 Whenever you are ready to update the live app, run: python push_to_prod.py")
+    print("Syncing local dev with origin/dev (fast-forward only)...")
+    run_cmd(["git", "pull", "--ff-only", "origin", "dev"])
+
+    bump = input(f"Bump APP_VERSION in {APP_FILE}? (y/n): ").strip().lower()
+    if bump == "y":
+        new_version = input("Enter new version (e.g., 1.4.0): ").strip()
+        if not validate_version(new_version):
+            print("ERROR: Invalid version format. Use semantic versioning, e.g., 1.4.0")
+            sys.exit(1)
+        update_app_version(new_version)
+
+    if not working_tree_has_changes():
+        print("No local changes detected. Nothing to commit.")
+        push_only = input("Push dev branch anyway? (y/n): ").strip().lower()
+        if push_only == "y":
+            run_cmd(["git", "push", "origin", "dev"])
+            print("Dev branch push complete.")
+        else:
+            print("No deployment action taken.")
+        return
+
+    print("\nCurrent changes:")
+    run_cmd(["git", "status", "--short"])
+
+    confirm_stage = input("Stage all current changes and continue? (y/n): ").strip().lower()
+    if confirm_stage != "y":
+        print("Cancelled. No changes were committed.")
+        return
+
+    run_cmd(["git", "add", "-A"])
+
+    # If nothing staged (rare edge case), abort safely.
+    staged_status = git_output(["diff", "--cached", "--name-only"])
+    if not staged_status:
+        print("No staged changes found after git add -A. Aborting.")
+        return
+
+    commit_msg = input("Commit message (Enter for default): ").strip() or "Routine DEV update"
+    run_cmd(["git", "commit", "-m", commit_msg])
+
+    print("Pushing to origin/dev...")
+    run_cmd(["git", "push", "origin", "dev"])
+
+    print("\nDev deployment push complete.")
+    print("Next: validate in staging, then run python push_to_prod.py when ready.")
+
+
+if __name__ == "__main__":
+    main()
