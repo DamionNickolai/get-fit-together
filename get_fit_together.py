@@ -48,7 +48,7 @@ from workouts import ROUTINES
 from utils import calculate_next_version, get_youtube_embed_url, safe_int_convert
 
 # 🟢 3. APP VERSIONING
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 st.session_state["APP_VERSION"] = APP_VERSION
 
 # ==========================================

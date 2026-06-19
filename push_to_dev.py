@@ -49,7 +49,7 @@ def update_app_version(new_version):
 
         updated_content, replacements = re.subn(
             r'^(APP_VERSION\s*=\s*")[^"]*(")',
-            rf'\1{new_version}\2',
+            lambda m: f"{m.group(1)}{new_version}{m.group(2)}",
             content,
             count=1,
             flags=re.MULTILINE,
