@@ -4,6 +4,8 @@ from streamlit_cookies_controller import CookieController
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from security import encrypt_data, decrypt_text
+
 
 SESSION_COOKIE_NAME = "get_fit_session_v2"
 LEGACY_SESSION_COOKIE_NAME = "get_fit_session"
@@ -111,7 +113,7 @@ def create_user_session(supabase, auth_user_id, refresh_token):
         session_record = {
             "session_id": session_id,
             "auth_user_id": auth_user_id,
-            "refresh_token": refresh_token,
+            "refresh_token": encrypt_data(refresh_token),
             "device_fingerprint": get_device_fingerprint(),
             "created_at": utc_now().isoformat(),
             "last_accessed_at": utc_now().isoformat(),
@@ -132,6 +134,7 @@ def get_session_from_database(supabase, session_id):
         result = supabase.table("user_sessions").select("*").eq("session_id", session_id).limit(1).execute()
         if result.data and len(result.data) > 0:
             session = result.data[0]
+            session["refresh_token"] = decrypt_text(session.get("refresh_token"))
             # Check if session is still active and not expired
             if session.get("is_active"):
                 expires_at = parse_iso_datetime(session.get("expires_at"))
@@ -161,7 +164,7 @@ def update_session_refresh_token(supabase, session_id, refresh_token):
     try:
         supabase.table("user_sessions").update(
             {
-                "refresh_token": refresh_token,
+                "refresh_token": encrypt_data(refresh_token),
                 "last_accessed_at": utc_now().isoformat(),
             }
         ).eq("session_id", session_id).execute()
