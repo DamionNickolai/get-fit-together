@@ -7,6 +7,15 @@
 !.env.example
 !maintenance/.env.example
 
+# Credentials and key material
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+.envrc
+*.secrets.toml
+
 # Python Virtual Environments
 .venv/
 venv/
