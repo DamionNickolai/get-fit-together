@@ -228,17 +228,33 @@ def get_all_time_prs(user_name):
         return {}
 
 def get_user_profile(user_name):
-    """Fetches the user's permanent dossier (phase, equipment, injuries) from Supabase."""
+    """Fetches and decrypts the user's permanent dossier."""
     try:
         response = supabase.table("gym_user_profiles").select("*").eq("username", user_name).execute()
         
         if response.data and len(response.data) > 0:
-            return response.data[0] 
+            data = response.data[0]
+            # 🟢 DECRYPT PROFILE DATA
+            data["current_phase"] = decrypt_text(data.get("current_phase"))
+            data["available_equipment"] = decrypt_text(data.get("available_equipment"))
+            data["nagging_injuries"] = decrypt_text(data.get("nagging_injuries"))
+            data["primary_goal"] = decrypt_text(data.get("primary_goal"))
+            data["goal_weight"] = decrypt_float(data.get("goal_weight"))
+            data["age"] = decrypt_float(data.get("age"))
+            
+            # Clean up floats that are actually integers (like Age)
+            if data["age"]:
+                data["age"] = int(data["age"])
+                
+            return data
         else:
             return {
                 "current_phase": "Phase 1: Foundation & Endurance",
                 "available_equipment": "Full Gym",
-                "nagging_injuries": "None"
+                "nagging_injuries": "None",
+                "goal_weight": None,
+                "primary_goal": "General Fitness",
+                "age": None
             }
     except Exception as e:
         print(f"Error fetching profile: {e}")
@@ -336,20 +352,28 @@ def ai_log_workout_set(user_name: str, exercise_name: str, sets: int, reps: int,
         return f"ERROR: {str(e)}"
     
 def ai_update_dossier(user_name: str, new_phase: str = None, new_equipment: str = None, new_injuries: str = None, new_goal_weight: float = None, new_primary_goal: str = None, new_age: int = None) -> str:
-    """Updates the user's permanent fitness profile (Dossier) in the database."""
+    """Encrypts and updates the user's permanent fitness profile."""
     try:
         current_profile = get_user_profile(user_name)
         
+        # 🟢 ENCRYPT BEFORE UPSERTING
         update_payload = {
             "username": user_name,
-            "current_phase": new_phase if new_phase else current_profile.get("current_phase"),
-            "available_equipment": new_equipment if new_equipment else current_profile.get("available_equipment"),
-            "nagging_injuries": new_injuries if new_injuries else current_profile.get("nagging_injuries"),
-            "goal_weight": new_goal_weight if new_goal_weight else current_profile.get("goal_weight"),
-            "primary_goal": new_primary_goal if new_primary_goal else current_profile.get("primary_goal"),
-            "age": new_age if new_age else current_profile.get("age"),
+            "current_phase": encrypt_data(new_phase) if new_phase else encrypt_data(current_profile.get("current_phase")),
+            "available_equipment": encrypt_data(new_equipment) if new_equipment else encrypt_data(current_profile.get("available_equipment")),
+            "nagging_injuries": encrypt_data(new_injuries) if new_injuries else encrypt_data(current_profile.get("nagging_injuries")),
+            "primary_goal": encrypt_data(new_primary_goal) if new_primary_goal else encrypt_data(current_profile.get("primary_goal")),
             "updated_at": datetime.now(ZoneInfo("America/Chicago")).isoformat()
         }
+        
+        # Handle numerics
+        gw = new_goal_weight if new_goal_weight else current_profile.get("goal_weight")
+        if gw:
+            update_payload["goal_weight"] = encrypt_data(gw)
+            
+        user_age = new_age if new_age else current_profile.get("age")
+        if user_age:
+            update_payload["age"] = encrypt_data(user_age)
         
         supabase.table("gym_user_profiles").upsert(update_payload).execute()
         return "SUCCESS: User profile updated in the database."
