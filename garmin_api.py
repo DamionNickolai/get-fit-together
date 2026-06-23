@@ -1,7 +1,7 @@
 import streamlit as st
 import datetime
-from zoneinfo import ZoneInfo
 from garminconnect import Garmin
+from timezone_utils import app_now
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_garmin_data_layer(today_str: str, cache_partition: str, _client):
@@ -72,8 +72,7 @@ def fetch_garmin_data_layer(today_str: str, cache_partition: str, _client):
 
         # 🟢 2. FIX THE WEIGHT SORTING & GOAL WEIGHT
         try:
-            tz = ZoneInfo("America/Chicago")
-            start_date = (datetime.datetime.now(tz) - datetime.timedelta(days=30)).date().isoformat()
+            start_date = (app_now() - datetime.timedelta(days=30)).date().isoformat()
             body_data = _client.get_body_composition(start_date, today_str)
             debug_info["RAW_BODY"] = body_data 
 

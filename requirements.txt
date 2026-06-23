@@ -6,3 +6,4 @@ supabase
 google-genai
 python-dotenv
 streamlit-cookies-controller
+streamlit-js-eval

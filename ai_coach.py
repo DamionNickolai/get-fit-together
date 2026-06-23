@@ -1,8 +1,8 @@
 import streamlit as st
 import datetime
-from zoneinfo import ZoneInfo
 import json
 from workouts import ROUTINES
+from timezone_utils import app_now
 
 # 🟢 NEW: Import the updated SDK and its types
 from google import genai
@@ -30,8 +30,7 @@ def init_coach_chat(user_name, current_goal_weight, recent_workouts, recent_vita
         return None, f"⚠️ Failed to configure AI: {e}"
 
     # Get today's actual day of the week (Timezone Corrected!)
-    local_tz = ZoneInfo("America/Chicago")
-    today_name = datetime.datetime.now(local_tz).strftime("%A")
+    today_name = app_now().strftime("%A")
 
     # Your Weekly Architecture so the Coach knows what you should be doing
     weekly_schedule = """

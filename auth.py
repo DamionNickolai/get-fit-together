@@ -2,9 +2,10 @@ import streamlit as st
 from supabase import create_client
 from streamlit_cookies_controller import CookieController
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from security import encrypt_data, decrypt_text
+from timezone_utils import app_now
 
 
 SESSION_COOKIE_NAME = "get_fit_session_v2"
@@ -34,8 +35,8 @@ def get_device_fingerprint():
     return st.session_state["device_fingerprint"]
 
 
-def utc_now():
-    return datetime.now(timezone.utc)
+def app_time_now():
+    return app_now()
 
 
 def parse_iso_datetime(value):
@@ -115,9 +116,9 @@ def create_user_session(supabase, auth_user_id, refresh_token):
             "auth_user_id": auth_user_id,
             "refresh_token": encrypt_data(refresh_token),
             "device_fingerprint": get_device_fingerprint(),
-            "created_at": utc_now().isoformat(),
-            "last_accessed_at": utc_now().isoformat(),
-            "expires_at": (utc_now() + timedelta(days=30)).isoformat(),
+            "created_at": app_time_now().isoformat(),
+            "last_accessed_at": app_time_now().isoformat(),
+            "expires_at": (app_time_now() + timedelta(days=30)).isoformat(),
             "is_active": True
         }
         
@@ -138,7 +139,7 @@ def get_session_from_database(supabase, session_id):
             # Check if session is still active and not expired
             if session.get("is_active"):
                 expires_at = parse_iso_datetime(session.get("expires_at"))
-                if expires_at and utc_now() < expires_at:
+                if expires_at and app_time_now() < expires_at:
                     return session
             # Session is expired or inactive
             return None
@@ -152,7 +153,7 @@ def refresh_session_access_time(supabase, session_id):
     """Update the last_accessed_at timestamp."""
     try:
         supabase.table("user_sessions").update(
-            {"last_accessed_at": utc_now().isoformat()}
+            {"last_accessed_at": app_time_now().isoformat()}
         ).eq("session_id", session_id).execute()
     except Exception as e:
         print(f"Error refreshing session: {e}")
@@ -165,7 +166,7 @@ def update_session_refresh_token(supabase, session_id, refresh_token):
         supabase.table("user_sessions").update(
             {
                 "refresh_token": encrypt_data(refresh_token),
-                "last_accessed_at": utc_now().isoformat(),
+                "last_accessed_at": app_time_now().isoformat(),
             }
         ).eq("session_id", session_id).execute()
     except Exception as e:

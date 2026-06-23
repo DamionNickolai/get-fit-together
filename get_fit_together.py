@@ -35,7 +35,7 @@ BODYWEIGHT_ONLY_EXERCISES = [
 
 # 🛑 2. IMPORT CUSTOM MODULES
 # 🟢 Bring in central time
-from zoneinfo import ZoneInfo
+from timezone_utils import app_now, app_today, initialize_user_timezone
 # 🟢 Bring in the login module!
 from auth import check_password
 # 🟢 Bring in the database automation helpers AND the Supabase client!
@@ -46,6 +46,9 @@ from ai_coach import init_coach_chat
 from workouts import ROUTINES
 # 🟢 Bring in the utility functions!
 from utils import calculate_next_version, get_youtube_embed_url, safe_int_convert
+
+# Initialize per-user timezone (device/browser) with US Central fallback.
+initialize_user_timezone()
 
 # 🟢 3. APP VERSIONING
 APP_VERSION = "2.2.0"
@@ -157,11 +160,8 @@ if check_password():
     try:
         from garminconnect import Garmin 
         from garmin_api import fetch_garmin_data_layer
-        from zoneinfo import ZoneInfo
-        import datetime
-        
-        tz = ZoneInfo("America/Chicago")
-        today = datetime.datetime.now(tz).date().isoformat()
+
+        today = app_today().isoformat()
 
         garmin_section = "garmin_dev" if is_local_env else "garmin_prod"
 
@@ -388,7 +388,7 @@ if check_password():
                         "available_equipment": new_equip,
                         "nagging_injuries": new_injuries,
                         "goal_weight": new_goal,
-                        "updated_at": datetime.datetime.now(ZoneInfo("America/Chicago")).isoformat()
+                        "updated_at": app_now().isoformat()
                 }).execute()
                 st.success("Profile Updated!")
                 st.rerun() 
@@ -807,9 +807,7 @@ if check_password():
         st.subheader("🏋️ Log Your Workout")
         
         # 🟢 THE TIMEZONE FIX
-        from zoneinfo import ZoneInfo
-        local_tz = ZoneInfo("America/Chicago")
-        local_today = datetime.datetime.now(local_tz).date()
+        local_today = app_today()
         date_input = st.date_input("Date", local_today)
         
         # 🟢 BUILD THE ULTIMATE MASTER ACTIVITY LIST

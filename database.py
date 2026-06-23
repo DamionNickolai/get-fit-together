@@ -1,8 +1,7 @@
 import streamlit as st
 from supabase import create_client, Client
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 import pandas as pd
+from timezone_utils import app_midnight_iso, app_now, app_today_iso
 
 # 🟢 IMPORT THE SECURITY ENGINE
 from security import encrypt_data, decrypt_text, decrypt_float
@@ -288,7 +287,7 @@ def get_todays_chat(username):
     """Fetches all chat messages for the user from exactly midnight Central Time to now."""
     target_table = get_chat_target_table()
     try:
-        today_start = datetime.now(ZoneInfo("America/Chicago")).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        today_start = app_midnight_iso()
         
         response = supabase.table(target_table)\
             .select("*")\
@@ -313,7 +312,7 @@ def clear_todays_chat(username):
     """Deletes only today's chat history so the user can start fresh."""
     target_table = get_chat_target_table()
     try:
-        today_start = datetime.now(ZoneInfo("America/Chicago")).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        today_start = app_midnight_iso()
         supabase.table(target_table)\
             .delete()\
             .eq("username", username)\
@@ -325,7 +324,7 @@ def clear_todays_chat(username):
 def ai_log_workout_set(user_name: str, exercise_name: str, sets: int, reps: int, weight_lbs: float, notes: str = "") -> str:
     """Logs a completed workout exercise to the user's fitness tracking database."""
     try:
-        today_str = datetime.now(ZoneInfo("America/Chicago")).strftime("%Y-%m-%d")
+        today_str = app_today_iso()
         
         if weight_lbs > 0:
             details_str = f"🤖 {sets} Sets | {reps} Reps | {float(weight_lbs)} lbs"
@@ -363,7 +362,7 @@ def ai_update_dossier(user_name: str, new_phase: str = None, new_equipment: str 
             "available_equipment": encrypt_data(new_equipment) if new_equipment else encrypt_data(current_profile.get("available_equipment")),
             "nagging_injuries": encrypt_data(new_injuries) if new_injuries else encrypt_data(current_profile.get("nagging_injuries")),
             "primary_goal": encrypt_data(new_primary_goal) if new_primary_goal else encrypt_data(current_profile.get("primary_goal")),
-            "updated_at": datetime.now(ZoneInfo("America/Chicago")).isoformat()
+            "updated_at": app_now().isoformat()
         }
         
         # Handle numerics
